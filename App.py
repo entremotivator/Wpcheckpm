@@ -220,10 +220,10 @@ with tab1:
     
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        fetch_btn = st.button("🔄 Fetch All Projects", use_container_width=True)
+        fetch_btn = st.button("🔄 Fetch All Projects", width='stretch')
     with col2:
         if st.session_state.get("projects"):
-            clear_btn = st.button("🗑️ Clear", use_container_width=True)
+            clear_btn = st.button("🗑️ Clear", width='stretch')
             if clear_btn:
                 st.session_state["projects"] = []
                 st.rerun()
@@ -280,15 +280,15 @@ with tab1:
                 "ID": p.get("id"),
                 "Title": extract_title(p),
                 "Status": p.get("status") or "",
-                "Tasks": meta.get("total_tasks", 0),
-                "Complete": meta.get("total_complete_tasks", 0),
+                "Tasks": str(meta.get("total_tasks", 0)),
+                "Complete": str(meta.get("total_complete_tasks", 0)),
                 "Files": meta.get("total_files", 0),
                 "Created": p.get("created_at") or p.get("created") or "",
                 "Description": desc_preview
             })
         
         df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, height=400)
+        st.dataframe(df, width='stretch', height=400)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -315,7 +315,7 @@ with tab1:
         with col1:
             project_id = st.text_input("Enter Project ID to Edit", key="edit_project_id")
         with col2:
-            load_btn = st.button("📥 Load Project", use_container_width=True)
+            load_btn = st.button("📥 Load Project", width='stretch')
         
         if load_btn and project_id:
             with st.spinner("Loading project..."):
@@ -344,9 +344,9 @@ with tab1:
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                    save_btn = st.form_submit_button("💾 Save Changes", width='stretch')
                 with col2:
-                    delete_btn = st.form_submit_button("🗑️ Delete Project", use_container_width=True)
+                    delete_btn = st.form_submit_button("🗑️ Delete Project", width='stretch')
                 
                 if save_btn:
                     payload = {"title": new_title, "status": new_status, "description": new_desc}
@@ -377,7 +377,7 @@ with tab1:
             create_status = st.selectbox("Status", ["incomplete", "active", "pending", "completed"], key="create_status")
             create_desc = st.text_area("Description", key="create_desc", height=150)
             
-            if st.form_submit_button("➕ Create Project", use_container_width=True):
+            if st.form_submit_button("➕ Create Project", width='stretch'):
                 if create_title:
                     payload = {
                         "title": create_title,
@@ -398,7 +398,7 @@ with tab1:
         with col1:
             clone_id = st.text_input("Enter Project ID to Clone", key="clone_id")
         with col2:
-            clone_btn = st.button("📋 Clone", use_container_width=True)
+            clone_btn = st.button("📋 Clone", width='stretch')
         
         if clone_btn and clone_id:
             with st.spinner("Cloning project..."):
@@ -434,7 +434,7 @@ with tab1:
                 import_data = json.load(uploaded_file)
                 st.json(import_data)
                 
-                if st.button("📥 Import Project", use_container_width=True):
+                if st.button("📥 Import Project", width='stretch'):
                     # Extract relevant fields
                     if isinstance(import_data, dict):
                         if "data" in import_data:
@@ -498,7 +498,7 @@ with tab2:
                     st.success(f"✅ Fetched {len(task_lists)} task lists and {len(tasks)} tasks for project {selected_project_id}.")
         
         # Allow manual refetch
-        if st.button("🔄 Re-fetch Task Lists & Tasks", use_container_width=True):
+        if st.button("🔄 Re-fetch Task Lists & Tasks", width='stretch'):
             with st.spinner(f"Re-fetching task data for project {selected_project_id}..."):
                 task_lists, tasks = fetch_project_tasks(selected_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
                 st.session_state["current_task_lists"] = task_lists
@@ -548,7 +548,7 @@ with tab2:
             
         if task_rows:
             task_df = pd.DataFrame(task_rows)
-            st.dataframe(task_df, use_container_width=True, height=400)
+            st.dataframe(task_df, width='stretch', height=400)
 
     # CSV Import Section
     st.markdown("---")
@@ -564,7 +564,7 @@ with tab2:
             
             # Display preview of the data
             with st.expander("📋 Preview CSV Data"):
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df.head(10), width='stretch')
             
             # Show statistics
             tasklist_count = len(df[df['type'] == 'tasklist'])
@@ -589,7 +589,7 @@ with tab2:
                     new_project_title = st.text_input("New Project Title", value="Imported Tasks Project")
             
             # Import button
-            if st.button("🚀 Start Import Process", use_container_width=True):
+            if st.button("🚀 Start Import Process", width='stretch'):
                 if not (import_tasklists or import_tasks):
                     st.error("Please select at least one import option.")
                 else:
@@ -757,7 +757,7 @@ with tab3:
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🔄 Fetch All Post Types", use_container_width=True):
+        if st.button("🔄 Fetch All Post Types", width='stretch'):
             with st.spinner("Fetching post types..."):
                 types = wp_get_json(f"{wp_base}/wp-json/wp/v2/types")
                 if types:
@@ -774,7 +774,7 @@ with tab3:
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            if st.button(f"🔄 Fetch '{type_selected}' Posts", use_container_width=True):
+            if st.button(f"🔄 Fetch '{type_selected}' Posts", width='stretch'):
                 with st.spinner(f"Fetching {type_selected} posts..."):
                     posts = fetch_all_pages(f"{posts_url}/{type_selected}")
                     st.session_state["posts_data"] = posts
@@ -794,7 +794,7 @@ with tab3:
                 }
                 for p in posts_data
             ])
-            st.dataframe(df, use_container_width=True, height=400)
+            st.dataframe(df, width='stretch', height=400)
             
             col1, col2 = st.columns(2)
             with col1:
