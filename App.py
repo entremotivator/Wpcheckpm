@@ -102,11 +102,20 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         res.raise_for_status()
         return res.json()
     except requests.HTTPError as e:
+        error_msg = f"POST failed with HTTP {res.status_code}"
         try:
             error_data = res.json()
-            st.error(f"POST failed: {error_data.get('message', str(e))}")
+            if isinstance(error_data, dict):
+                error_msg += f": {error_data.get('message', str(e))}"
+            st.error(error_msg)
         except:
-            st.error(f"POST failed: {e}\n{res.text}")
+            # Not JSON response - might be HTML error page
+            if 'text/html' in res.headers.get('content-type', ''):
+                st.error(f"{error_msg}: WordPress returned an HTML error page (likely a PHP fatal error)")
+                with st.expander("View Error Details"):
+                    st.code(res.text[:1000])  # Show first 1000 chars
+            else:
+                st.error(f"{error_msg}: {res.text[:500]}")
         return None
     except Exception as e:
         st.error(f"POST failed: {e}")
@@ -460,7 +469,27 @@ with tab2:
             st.write(f"Preview of uploaded data ({len(import_data)} items):")
             st.dataframe(pd.DataFrame(import_data).head(10), use_container_width=True)
             
-            st.info("💡 Note: Only POST (create new) is supported. Update via PUT may not be available for all endpoints.")
+            st.info("💡 Note: Only POST (create new) is supported. The importer will send minimal required fields.")
+            
+            # Field mapping section
+            with st.expander("⚙️ Advanced: Field Mapping & Filtering"):
+                st.markdown("**Select which fields to include in the import:**")
+                available_fields = list(import_data[0].keys()) if import_data else []
+                
+                if import_type == "Task Lists":
+                    default_fields = ["title", "description", "order", "project_id"]
+                else:  # Tasks
+                    default_fields = ["title", "description", "list_id", "project_id", "start_at", "due_date", "complexity", "priority", "status"]
+                
+                selected_fields = st.multiselect(
+                    "Fields to include:",
+                    options=available_fields,
+                    default=[f for f in default_fields if f in available_fields],
+                    key=f"field_select_{selected_project_id}"
+                )
+                
+                st.markdown("**Test with first item:**")
+                test_import = st.checkbox("Test import with first item only", value=False, key=f"test_import_{selected_project_id}")
             
             if st.button("⬆️ Import Data", use_container_width=True, key=f"process_upload_btn_{selected_project_id}"):
                 imported_count = 0
@@ -473,11 +502,14 @@ with tab2:
                     endpoint = f"{projects_url}/{selected_project_id}/tasks"
                     item_type = "Task"
                 
+                # Limit to first item if testing
+                items_to_import = import_data[:1] if test_import else import_data
+                
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                for index, item in enumerate(import_data):
-                    status_text.text(f"Processing {index + 1}/{len(import_data)}...")
+                for index, item in enumerate(items_to_import):
+                    status_text.text(f"Processing {index + 1}/{len(items_to_import)}...")
                     
                     # Clean the payload
                     payload = {}
@@ -485,23 +517,56 @@ with tab2:
                         # Skip ID field to create new items
                         if k.lower() in ['id']:
                             continue
-                        # Handle NaN and None values
-                        if pd.isna(v) if isinstance(v, float) else v is None:
+                        
+                        # Only include selected fields if field selection is active
+                        if selected_fields and k not in selected_fields:
                             continue
+                        
+                        # Handle NaN and None values
+                        if isinstance(v, float) and pd.isna(v):
+                            continue
+                        if v is None:
+                            continue
+                        
                         # Convert numpy types to Python types
                         if hasattr(v, 'item'):
                             v = v.item()
+                        
+                        # Convert empty strings to None for optional fields
+                        if isinstance(v, str) and v.strip() == "":
+                            continue
+                            
                         payload[k] = v
+                    
+                    # Ensure minimum required fields
+                    if 'title' not in payload:
+                        st.warning(f"Skipping item {index + 1}: Missing required 'title' field")
+                        failed_count += 1
+                        continue
+                    
+                    # Show payload in test mode
+                    if test_import:
+                        st.write("**Payload being sent:**")
+                        st.json(payload)
+                        st.write(f"**Endpoint:** `{endpoint}`")
                     
                     # Try to create new item
                     res = wp_post_json(endpoint, payload)
                     if res:
                         imported_count += 1
+                        if test_import:
+                            st.success("✅ Test import successful!")
+                            st.json(res)
                     else:
                         failed_count += 1
+                        if test_import:
+                            st.error("❌ Test import failed. Check error above.")
                     
-                    progress_bar.progress((index + 1) / len(import_data))
-                    time.sleep(0.15)  # Be kind to the API
+                    progress_bar.progress((index + 1) / len(items_to_import))
+                    
+                    # Only sleep if not testing
+                    if not test_import:
+                        time.sleep(0.15)  # Be kind to the API
                 
                 progress_bar.empty()
                 status_text.empty()
@@ -511,7 +576,7 @@ with tab2:
                 if failed_count > 0:
                     st.error(f"❌ Failed to import {failed_count} {item_type}(s). Check error messages above.")
                 
-                if imported_count > 0:
+                if imported_count > 0 and not test_import:
                     st.info("✨ Import completed! Re-fetching data...")
                     # Auto-refresh the data
                     task_lists = fetch_all_pages(f"{projects_url}/{selected_project_id}/task-lists")
