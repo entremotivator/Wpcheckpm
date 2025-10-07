@@ -748,7 +748,13 @@ with tab2:
                         download_json(import_results, "import_results.json", label="⬇️ Download Import Results")
                         
                         if target_project_id:
-                            st.info(f"💡 Import completed for project ID: {target_project_id}. You can now view the imported data by selecting this project.")
+                            st.info(f"💡 Import completed for project ID: {target_project_id}. Re-fetching data...")
+                            # Refresh task lists and tasks after import
+                            task_lists, tasks = fetch_project_tasks(target_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
+                            st.session_state["current_task_lists"] = task_lists
+                            st.session_state["current_tasks"] = tasks
+                            st.session_state["current_project_id"] = target_project_id
+                            st.rerun()
         
         except Exception as e:
             st.error(f"Error reading CSV file: {str(e)}")
