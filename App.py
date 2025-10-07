@@ -197,13 +197,13 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
     
     return all_items
 
-def fetch_project_tasks(project_id, projects_url, wp_base, api_ns, fetch_all_pages, silent_on_error=True):
-    task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists", silent_on_error=silent_on_error)
-    task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists", silent_on_error=silent_on_error)
+def fetch_project_tasks(project_id, projects_url, wp_base, api_ns, fetch_all_pages):
+    task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists")
+    task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists")
     task_lists = (task_lists_1 or []) + (task_lists_2 or [])
     
-    tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks", silent_on_error=silent_on_error)
-    tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks", silent_on_error=silent_on_error)
+    tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks")
+    tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks")
     tasks = (tasks_1 or []) + (tasks_2 or [])
     return task_lists, tasks
 
