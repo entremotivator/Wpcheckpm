@@ -62,19 +62,33 @@ st.caption("Fetch, export, import, and edit WordPress Project Manager data and a
 # -------------------------------------
 # Helper functions
 # -------------------------------------
-def wp_get_json(url: str, params: Dict[str, Any] = None):
+def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool = False):
+    """
+    Fetch JSON from WordPress REST API.
+    
+    Args:
+        url: The API endpoint URL
+        params: Query parameters
+        silent_on_error: If True, suppress error messages (useful for permission errors)
+    
+    Returns:
+        JSON response or None on error
+    """
     try:
         res = requests.get(url, headers=headers, auth=auth, params=params, timeout=30)
         res.raise_for_status()
         return res.json()
     except requests.HTTPError as e:
-        st.error(f"HTTP Error: {e}\nResponse: {res.text}")
+        if not silent_on_error:
+            st.error(f"HTTP Error: {e}\nResponse: {res.text}")
         return None
     except Exception as e:
-        st.error(f"Error connecting to {url}: {e}")
+        if not silent_on_error:
+            st.error(f"Error connecting to {url}: {e}")
         return None
 
 def wp_post_json(url: str, data: Dict[str, Any]):
+    """Create a new resource via POST request."""
     try:
         res = requests.post(url, headers=headers, auth=auth, json=data, timeout=30)
         res.raise_for_status()
@@ -84,6 +98,7 @@ def wp_post_json(url: str, data: Dict[str, Any]):
         return None
 
 def wp_put_json(url: str, data: Dict[str, Any]):
+    """Update an existing resource via PUT request."""
     try:
         res = requests.put(url, headers=headers, auth=auth, json=data, timeout=30)
         res.raise_for_status()
@@ -93,6 +108,7 @@ def wp_put_json(url: str, data: Dict[str, Any]):
         return None
 
 def download_json(obj, filename: str, label="Download JSON"):
+    """Create a download button for JSON data."""
     b = json.dumps(obj, indent=2).encode("utf-8")
     st.download_button(label=label, data=b, file_name=filename, mime="application/json")
 
@@ -160,11 +176,27 @@ with tab1:
 
         if include_tasks:
             st.info("Fetching task-lists & tasks for each project...")
+            success_count = 0
+            permission_errors = 0
+            
             for p in projects:
                 pid = p.get("id")
                 if pid:
-                    p["task_lists"] = wp_get_json(f"{projects_url}/{pid}/task-lists") or []
-                    p["tasks"] = wp_get_json(f"{projects_url}/{pid}/tasks") or []
+                    task_lists = wp_get_json(f"{projects_url}/{pid}/task-lists", silent_on_error=True)
+                    tasks = wp_get_json(f"{projects_url}/{pid}/tasks", silent_on_error=True)
+                    
+                    if task_lists is None or tasks is None:
+                        permission_errors += 1
+                    else:
+                        success_count += 1
+                    
+                    p["task_lists"] = task_lists or []
+                    p["tasks"] = tasks or []
+            
+            if permission_errors > 0:
+                st.warning(f"⚠️ {permission_errors} project(s) returned permission errors for task-lists/tasks. Your user account may not have access to these projects' tasks.")
+            if success_count > 0:
+                st.success(f"✅ Successfully fetched tasks for {success_count} project(s).")
 
     # Edit project
     st.subheader("✏️ Edit Project")
