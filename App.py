@@ -197,6 +197,16 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
     
     return all_items
 
+def fetch_project_tasks(project_id, projects_url, wp_base, api_ns, fetch_all_pages, silent_on_error=True):
+    task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists", silent_on_error=silent_on_error)
+    task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists", silent_on_error=silent_on_error)
+    task_lists = (task_lists_1 or []) + (task_lists_2 or [])
+    
+    tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks", silent_on_error=silent_on_error)
+    tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks", silent_on_error=silent_on_error)
+    tasks = (tasks_1 or []) + (tasks_2 or [])
+    return task_lists, tasks
+
 # -------------------------------------
 # Tabs
 # -------------------------------------
@@ -472,22 +482,12 @@ with tab2:
         
         st.markdown("---")
         
-        # Function to fetch task lists and tasks, handling multiple endpoints
-        def fetch_project_tasks(project_id):
-            task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists", silent_on_error=True)
-            task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists", silent_on_error=True)
-            task_lists = (task_lists_1 or []) + (task_lists_2 or [])
-            
-            tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks", silent_on_error=True)
-            tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks", silent_on_error=True)
-            tasks = (tasks_1 or []) + (tasks_2 or [])
-            return task_lists, tasks
+
 
         # Automatically fetch task lists and tasks when a project is selected or tab is accessed
         if selected_project_id and (st.session_state.get("current_project_id") != selected_project_id or not st.session_state.get("current_task_lists") or not st.session_state.get("current_tasks")):
             with st.spinner(f"Fetching task data for project {selected_project_id}..."):
-                task_lists, tasks = fetch_project_tasks(selected_project_id)
-                
+                task_lists, tasks = fetch_project_tasks(selected_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
                 st.session_state["current_task_lists"] = task_lists
                 st.session_state["current_tasks"] = tasks
                 st.session_state["current_project_id"] = selected_project_id
@@ -500,8 +500,7 @@ with tab2:
         # Allow manual refetch
         if st.button("🔄 Re-fetch Task Lists & Tasks", use_container_width=True):
             with st.spinner(f"Re-fetching task data for project {selected_project_id}..."):
-                task_lists, tasks = fetch_project_tasks(selected_project_id)
-                
+                task_lists, tasks = fetch_project_tasks(selected_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
                 st.session_state["current_task_lists"] = task_lists
                 st.session_state["current_tasks"] = tasks
                 st.session_state["current_project_id"] = selected_project_id
