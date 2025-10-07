@@ -1,3 +1,4 @@
+
 """
 Streamlit App: WP Project Manager + Custom Post Types
 -----------------------------------------------------
@@ -76,7 +77,7 @@ def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool =
             try:
                 error_data = res.json()
                 if isinstance(error_data, dict):
-                    error_msg += f"\n{error_data.get('message', res.text)}"
+                    error_msg += f"\n{error_data.get("message", res.text)}"
             except:
                 error_msg += f"\n{res.text}"
             st.error(error_msg)
@@ -95,7 +96,7 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"POST failed: {error_data.get('message', str(e))}")
+            st.error(f"POST failed: {error_data.get("message", str(e))}")
         except:
             st.error(f"POST failed: {e}\n{res.text}")
         return None
@@ -112,7 +113,7 @@ def wp_put_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"PUT failed: {error_data.get('message', str(e))}")
+            st.error(f"PUT failed: {error_data.get("message", str(e))}")
         except:
             st.error(f"PUT failed: {e}\n{res.text}")
         return None
@@ -281,7 +282,7 @@ with tab1:
             download_json(projects, "wp_projects.json", label="⬇️ Download Projects JSON")
         
         with col2:
-            csv = df.to_csv(index=False).encode('utf-8')
+            csv = df.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="⬇️ Download Projects CSV",
                 data=csv,
@@ -336,7 +337,7 @@ with tab1:
                 
                 if save_btn:
                     payload = {"title": new_title, "status": new_status, "description": new_desc}
-                    res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
+                    res = wp_put_json(f"{projects_url}/{edit_project.get("id")}", payload)
                     if res:
                         st.success("✅ Project updated successfully.")
                         st.session_state["edit_project"] = res
@@ -345,7 +346,7 @@ with tab1:
                 
                 if delete_btn:
                     if st.session_state.get("confirm_delete"):
-                        res = wp_delete_json(f"{projects_url}/{edit_project.get('id')}")
+                        res = wp_delete_json(f"{projects_url}/{edit_project.get("id")}")
                         if res:
                             st.success("✅ Project deleted successfully.")
                             st.session_state.pop("edit_project", None)
@@ -372,7 +373,7 @@ with tab1:
                     }
                     res = wp_post_json(projects_url, payload)
                     if res:
-                        st.success(f"✅ Project created successfully! ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                        st.success(f"✅ Project created successfully! ID: {res.get("id") if isinstance(res, dict) else "N/A"}")
                         if show_raw_json:
                             st.json(res)
                 else:
@@ -406,14 +407,14 @@ with tab1:
                     
                     res = wp_post_json(projects_url, clone_payload)
                     if res:
-                        st.success(f"✅ Project cloned successfully! New ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                        st.success(f"✅ Project cloned successfully! New ID: {res.get("id") if isinstance(res, dict) else "N/A"}")
                         if show_raw_json:
                             st.json(res)
     
     # IMPORT TAB
     with action_tabs[3]:
         st.write("Import project from JSON file")
-        uploaded_file = st.file_uploader("Choose a JSON file", type=['json'], key="import_json")
+        uploaded_file = st.file_uploader("Choose a JSON file", type=["json"], key="import_json")
         
         if uploaded_file is not None:
             try:
@@ -423,40 +424,42 @@ with tab1:
                 if st.button("📥 Import Project", use_container_width=True):
                     # Extract relevant fields
                     if isinstance(import_data, dict):
-                        if "data" in import_data:
-                            import_data = import_data["data"]
-                        
+                        title = import_data.get("title", "Imported Project")
+                        status = import_data.get("status", "incomplete")
+                        description = import_data.get("description", "")
+                        if isinstance(description, dict):
+                            description = description.get("content", "") or description.get("html", "")
+
                         payload = {
-                            "title": extract_title(import_data),
-                            "status": import_data.get("status", "incomplete"),
-                            "description": import_data.get("description", "")
+                            "title": title,
+                            "status": status,
+                            "description": description
                         }
-                        
                         res = wp_post_json(projects_url, payload)
                         if res:
-                            st.success(f"✅ Project imported successfully! ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                            st.success(f"✅ Project imported successfully! ID: {res.get("id") if isinstance(res, dict) else "N/A"}")
                             if show_raw_json:
                                 st.json(res)
                     else:
-                        st.error("Invalid JSON format")
+                        st.error("Invalid JSON format for project import.")
             except Exception as e:
-                st.error(f"Error reading JSON: {e}")
+                st.error(f"Error parsing JSON file: {e}")
 
 # -------------------------------------
-# TAB 2: TASKS & TASK LISTS
+# TAB 2: TASKS & LISTS
 # -------------------------------------
 with tab2:
-    st.header("📋 Task Lists & Tasks Management")
+    st.header("📋 Tasks & Lists")
     
     if not projects:
         st.info("👈 Please fetch projects first from the 'WP Projects' tab.")
     else:
-        project_options = {f"{p.get('id')} - {extract_title(p)}": p.get('id') for p in projects}
+        project_options = {f"{p.get("id")} - {extract_title(p)}": p.get("id") for p in projects}
         selected_project_label = st.selectbox("Select Project", options=list(project_options.keys()))
         selected_project_id = project_options[selected_project_label]
         
         # Show project stats
-        selected_project = next((p for p in projects if p.get('id') == selected_project_id), None)
+        selected_project = next((p for p in projects if p.get("id") == selected_project_id), None)
         if selected_project:
             meta = extract_meta_totals(selected_project)
             col1, col2, col3, col4, col5 = st.columns(5)
@@ -470,8 +473,8 @@ with tab2:
         
         if st.button("🔄 Fetch Task Lists & Tasks", use_container_width=True):
             with st.spinner("Fetching task data..."):
-                task_lists = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists")
-                tasks = wp_get_json(f"{projects_url}/{selected_project_id}/tasks")
+                task_lists = fetch_all_pages(f"{projects_url}/{selected_project_id}/task-lists")
+                tasks = fetch_all_pages(f"{projects_url}/{selected_project_id}/tasks")
                 
                 if task_lists or tasks:
                     st.session_state["current_task_lists"] = task_lists or []
@@ -497,9 +500,9 @@ with tab2:
             st.subheader("📑 Task Lists")
             for tl in task_lists:
                 if isinstance(tl, dict):
-                    with st.expander(f"📑 {tl.get('title', 'Untitled')} (ID: {tl.get('id')})"):
-                        st.write(f"**Description:** {tl.get('description', 'No description')}")
-                        st.write(f"**Status:** {tl.get('status', 'N/A')}")
+                    with st.expander(f"📑 {tl.get("title", "Untitled")} (ID: {tl.get("id")})"):
+                        st.write(f"**Description:** {tl.get("description", "N/A")}")
+                        st.write(f"**Status:** {tl.get("status", "N/A")}")
                         if show_raw_json:
                             st.json(tl)
         
@@ -546,7 +549,7 @@ with tab3:
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            if st.button(f"🔄 Fetch '{type_selected}' Posts", use_container_width=True):
+            if st.button(f"🔄 Fetch \'{type_selected}\' Posts", use_container_width=True):
                 with st.spinner(f"Fetching {type_selected} posts..."):
                     posts = fetch_all_pages(f"{posts_url}/{type_selected}")
                     st.session_state["posts_data"] = posts
@@ -572,7 +575,7 @@ with tab3:
             with col1:
                 download_json(posts_data, f"{type_selected}_export.json", label="⬇️ Download Posts JSON")
             with col2:
-                csv = df.to_csv(index=False).encode('utf-8')
+                csv = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
                     label="⬇️ Download Posts CSV",
                     data=csv,
@@ -659,3 +662,4 @@ with tab4:
 # -------------------------------------
 st.markdown("---")
 st.caption("🚀 Developed for WordPress REST API exploration — supports WP Project Manager and all custom post types. Handles App Password authentication safely.")
+
