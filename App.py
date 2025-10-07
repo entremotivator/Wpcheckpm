@@ -1,4 +1,3 @@
-
 """
 Streamlit App: WP Project Manager + Custom Post Types
 -----------------------------------------------------
@@ -51,7 +50,7 @@ if wp_user and wp_app_password:
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Options**")
 api_ns = st.sidebar.text_input("Project Manager API Namespace", "pm/v2")
-include_tasks = st.sidebar.checkbox("Include Task Lists & Tasks", value=True, help="If checked, task lists and tasks will be fetched for all projects in the \'WP Projects\' tab.")
+include_tasks = st.sidebar.checkbox("Include Task Lists & Tasks", value=True, help="If checked, task lists and tasks will be fetched for all projects in the 'WP Projects' tab.")
 show_raw_json = st.sidebar.checkbox("Show Raw JSON Responses", value=False)
 
 # API URLs
@@ -86,7 +85,7 @@ def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool =
             try:
                 error_data = res.json()
                 if isinstance(error_data, dict):
-                    error_msg += f"\n{error_data.get(\"message\", res.text)}"
+                    error_msg += f"\n{error_data.get('message', res.text)}"
             except:
                 error_msg += f"\n{res.text}"
             st.error(error_msg)
@@ -105,7 +104,7 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"POST failed: {error_data.get(\"message\", str(e))}")
+            st.error(f"POST failed: {error_data.get('message', str(e))}")
         except:
             st.error(f"POST failed: {e}\n{res.text}")
         return None
@@ -122,7 +121,7 @@ def wp_put_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"PUT failed: {error_data.get(\"message\", str(e))}")
+            st.error(f"PUT failed: {error_data.get('message', str(e))}")
         except:
             st.error(f"PUT failed: {e}\n{res.text}")
         return None
@@ -148,7 +147,7 @@ def download_json(obj, filename: str, label="Download JSON"):
 def extract_title(p: dict) -> str:
     """
     Safely extract the title from WP REST API project or CPT object.
-    Handles title as dict (with \'rendered\') or string, plus fallback keys.
+    Handles title as dict (with 'rendered') or string, plus fallback keys.
     """
     t = p.get("title")
     if isinstance(t, dict):
@@ -338,7 +337,7 @@ with tab1:
             
             if save_btn:
                 payload = {"title": new_title, "status": new_status, "description": new_desc}
-                res = wp_put_json(f"{projects_url}/{edit_project.get("id")}", payload)
+                res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
                 if res:
                     st.success("✅ Project updated successfully.")
                     st.session_state["edit_project"] = res
@@ -347,7 +346,7 @@ with tab1:
             
             if delete_btn:
                 if st.session_state.get("confirm_delete"):
-                    res = wp_delete_json(f"{projects_url}/{edit_project.get("id")}")
+                    res = wp_delete_json(f"{projects_url}/{edit_project.get('id')}")
                     if res:
                         st.success("✅ Project deleted successfully.")
                         st.session_state.pop("edit_project", None)
@@ -364,9 +363,9 @@ with tab2:
     st.header("📋 Task Lists & Tasks Management")
     
     if not projects:
-        st.info("👈 Please fetch projects first from the \'WP Projects\' tab.")
+        st.info("👈 Please fetch projects first from the 'WP Projects' tab.")
     else:
-        project_options = {f"{p.get("id")} - {extract_title(p)}": p.get("id") for p in projects}
+        project_options = {f"{p.get('id')} - {extract_title(p)}": p.get("id") for p in projects}
         selected_project_label = st.selectbox("Select Project", options=list(project_options.keys()))
         selected_project_id = project_options[selected_project_label]
 
@@ -408,65 +407,9 @@ with tab2:
                 else:
                     st.success(f"✅ Re-fetched {len(task_lists or [])} task lists and {len(tasks or [])} tasks for project {selected_project_id}.")
 
-                st.markdown("---")
-        st.subheader("⬆️ Import Task Data")
-        uploaded_file = st.file_uploader("Upload CSV file for Task Lists or Tasks", type=["csv"], key=f"upload_task_data_{selected_project_id}")
-        if uploaded_file is not None:
-            import_type = st.radio("Import as:", ["Task Lists", "Tasks"], key=f"import_type_{selected_project_id}")
-            override_existing = st.checkbox("Override existing data (based on ID match)", value=False, key=f"override_existing_{selected_project_id}")
-            
-            if st.button("⬆️ Process Upload", use_container_width=True, key=f"process_upload_btn_{selected_project_id}"):
-                df_import = pd.read_csv(uploaded_file)
-                st.write("Preview of uploaded data:")
-                st.dataframe(df_import)
-                
-                if import_type == "Task Lists":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task List with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Task Lists.")
-                elif import_type == "Tasks":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Tasks.")
-                
-                st.success("Import process completed. Please re-fetch data to see changes.")
-        
+        # Display data tables and download options
         if task_lists:
-            st.write("**Task Lists**")
+            st.subheader("📝 Task Lists")
             df_task_lists = pd.DataFrame(task_lists)
             st.dataframe(df_task_lists, use_container_width=True)
             csv_task_lists = df_task_lists.to_csv(index=False).encode("utf-8")
@@ -479,7 +422,7 @@ with tab2:
             )
         
         if tasks:
-            st.write("**Tasks**")
+            st.subheader("✅ Tasks")
             df_tasks = pd.DataFrame(tasks)
             st.dataframe(df_tasks, use_container_width=True)
             csv_tasks = df_tasks.to_csv(index=False).encode("utf-8")
@@ -491,93 +434,11 @@ with tab2:
                 key=f"download_tasks_csv_{selected_project_id}"
             )
 
-
-                st.markdown("---")
-        st.subheader("⬆️ Import Task Data")
-        uploaded_file = st.file_uploader("Upload CSV file for Task Lists or Tasks", type=["csv"], key=f"upload_task_data_{selected_project_id}")
-        if uploaded_file is not None:
-            import_type = st.radio("Import as:", ["Task Lists", "Tasks"], key=f"import_type_{selected_project_id}")
-            override_existing = st.checkbox("Override existing data (based on ID match)", value=False, key=f"override_existing_{selected_project_id}")
-            
-            if st.button("⬆️ Process Upload", use_container_width=True, key=f"process_upload_btn_{selected_project_id}"):
-                df_import = pd.read_csv(uploaded_file)
-                st.write("Preview of uploaded data:")
-                st.dataframe(df_import)
-                
-                if import_type == "Task Lists":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task List with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Task Lists.")
-                elif import_type == "Tasks":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Tasks.")
-                
-                st.success("Import process completed. Please re-fetch data to see changes.")
-        
-        if task_lists:
-            st.write("**Task Lists**")
-            df_task_lists = pd.DataFrame(task_lists)
-            st.dataframe(df_task_lists, use_container_width=True)
-            csv_task_lists = df_task_lists.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Task Lists CSV",
-                data=csv_task_lists,
-                file_name=f"project_{selected_project_id}_task_lists.csv",
-                mime="text/csv",
-                key=f"download_task_lists_csv_{selected_project_id}"
-            )
-        
-        if tasks:
-            st.write("**Tasks**")
-            df_tasks = pd.DataFrame(tasks)
-            st.dataframe(df_tasks, use_container_width=True)
-            csv_tasks = df_tasks.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Tasks CSV",
-                data=csv_tasks,
-                file_name=f"project_{selected_project_id}_tasks.csv",
-                mime="text/csv",
-                key=f"download_tasks_csv_{selected_project_id}"
-            )
-
+        # Import section (only once!)
         st.markdown("---")
         st.subheader("⬆️ Import Task Data")
         uploaded_file = st.file_uploader("Upload CSV file for Task Lists or Tasks", type=["csv"], key=f"upload_task_data_{selected_project_id}")
+        
         if uploaded_file is not None:
             import_type = st.radio("Import as:", ["Task Lists", "Tasks"], key=f"import_type_{selected_project_id}")
             override_existing = st.checkbox("Override existing data (based on ID match)", value=False, key=f"override_existing_{selected_project_id}")
@@ -587,54 +448,46 @@ with tab2:
                 st.write("Preview of uploaded data:")
                 st.dataframe(df_import)
                 
-                if import_type == "Task Lists":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task List with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Task Lists.")
-                elif import_type == "Tasks":
-                    imported_count = 0
-                    for index, row in df_import.iterrows():
-                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
-                        payload = row.to_dict()
-                        
-                        if override_existing and item_id:
-                            # Check if item exists before attempting to update
-                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", silent_on_error=True)
-                            if existing_item:
-                                res = wp_put_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", payload)
-                                if res: imported_count += 1
-                            else:
-                                st.warning(f"Task with ID {item_id} not found for update. Creating new instead.")
-                                res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                                if res: imported_count += 1
-                        else:
-                            res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
-                            if res: imported_count += 1
-                        time.sleep(0.1) # Be kind to the API
-                    st.success(f"Successfully imported/updated {imported_count} Tasks.")
+                imported_count = 0
+                endpoint_base = f"{projects_url}/{selected_project_id}"
                 
-                st.success("Import process completed. Please re-fetch data to see changes.")
+                if import_type == "Task Lists":
+                    endpoint = f"{endpoint_base}/task-lists"
+                    item_type = "Task List"
+                else:
+                    endpoint = f"{endpoint_base}/tasks"
+                    item_type = "Task"
+                
+                for index, row in df_import.iterrows():
+                    item_id = row.get("id") or row.get("ID")
+                    payload = row.to_dict()
+                    
+                    if override_existing and item_id:
+                        # Check if item exists before attempting to update
+                        existing_item = wp_get_json(f"{endpoint}/{item_id}", silent_on_error=True)
+                        if existing_item:
+                            res = wp_put_json(f"{endpoint}/{item_id}", payload)
+                            if res:
+                                imported_count += 1
+                        else:
+                            st.warning(f"{item_type} with ID {item_id} not found for update. Creating new instead.")
+                            res = wp_post_json(endpoint, payload)
+                            if res:
+                                imported_count += 1
+                    else:
+                        res = wp_post_json(endpoint, payload)
+                        if res:
+                            imported_count += 1
+                    
+                    time.sleep(0.1)  # Be kind to the API
+                
+                st.success(f"Successfully imported/updated {imported_count} {item_type}(s).")
+                st.info("Import process completed. Please re-fetch data to see changes.")
 
-        # Display Task Lists
+        # Display expandable task lists
         if task_lists:
-            st.subheader("📝 Task Lists")
+            st.markdown("---")
+            st.subheader("📝 Task Lists Details")
             for tl in task_lists:
                 if not isinstance(tl, dict):
                     continue
@@ -642,12 +495,13 @@ with tab2:
                 if isinstance(tl_title, dict):
                     tl_title = tl_title.get("rendered", "")
                 
-                with st.expander(f"Task List: {tl_title} (ID: {tl.get("id")})"):
+                with st.expander(f"Task List: {tl_title} (ID: {tl.get('id')})"):
                     st.json(tl)
 
-        # Display Tasks
+        # Display expandable tasks
         if tasks:
-            st.subheader("✅ Tasks")
+            st.markdown("---")
+            st.subheader("✅ Tasks Details")
             for t in tasks:
                 if not isinstance(t, dict):
                     continue
@@ -655,7 +509,7 @@ with tab2:
                 if isinstance(t_title, dict):
                     t_title = t_title.get("rendered", "")
                 
-                with st.expander(f"Task: {t_title} (ID: {t.get("id")})"):
+                with st.expander(f"Task: {t_title} (ID: {t.get('id')})"):
                     st.json(t)
 
 # -------------------------------------
@@ -779,4 +633,3 @@ with tab4:
 # -------------------------------------
 st.markdown("---")
 st.caption("🚀 Developed for WordPress REST API exploration — supports WP Project Manager and all custom post types. Handles App Password authentication safely.")
-
