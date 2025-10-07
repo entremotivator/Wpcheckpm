@@ -546,9 +546,208 @@ with tab2:
                         "Completed": task.get("completed", False)
                     })
             
-            if task_rows:
-                task_df = pd.DataFrame(task_rows)
-                st.dataframe(task_df, use_container_width=True, height=400)
+        if task_rows:
+            task_df = pd.DataFrame(task_rows)
+            st.dataframe(task_df, use_container_width=True, height=400)
+
+    # CSV Import Section
+    st.markdown("---")
+    st.subheader("📤 Import Tasks & Task Lists from CSV")
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type=['csv'], key="import_tasks_csv")
+    
+    if uploaded_file is not None:
+        try:
+            # Read the CSV file
+            df = pd.read_csv(uploaded_file)
+            st.success(f"✅ CSV file loaded successfully! Found {len(df)} rows.")
+            
+            # Display preview of the data
+            with st.expander("📋 Preview CSV Data"):
+                st.dataframe(df.head(10), use_container_width=True)
+            
+            # Show statistics
+            tasklist_count = len(df[df['type'] == 'tasklist'])
+            task_count = len(df[df['type'] == 'task'])
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Task Lists", tasklist_count)
+            col2.metric("Tasks", task_count)
+            col3.metric("Total Rows", len(df))
+            
+            # Import options
+            st.markdown("### Import Options")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                import_tasklists = st.checkbox("Import Task Lists", value=True)
+                import_tasks = st.checkbox("Import Tasks", value=True)
+            
+            with col2:
+                create_project_for_import = st.checkbox("Create new project for import", value=False)
+                if create_project_for_import:
+                    new_project_title = st.text_input("New Project Title", value="Imported Tasks Project")
+            
+            # Import button
+            if st.button("🚀 Start Import Process", use_container_width=True):
+                if not (import_tasklists or import_tasks):
+                    st.error("Please select at least one import option.")
+                else:
+                    # Create new project if requested
+                    target_project_id = selected_project_id
+                    if create_project_for_import:
+                        with st.spinner("Creating new project..."):
+                            project_payload = {
+                                "title": new_project_title,
+                                "status": "active",
+                                "description": f"Project created for CSV import on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                            }
+                            new_project = wp_post_json(projects_url, project_payload)
+                            if new_project:
+                                target_project_id = new_project.get('id')
+                                st.success(f"✅ Created new project with ID: {target_project_id}")
+                            else:
+                                st.error("Failed to create new project.")
+                                st.stop()
+                    
+                    if not target_project_id:
+                        st.error("Please select a project or create a new one.")
+                        st.stop()
+                    
+                    # Import process
+                    import_results = {"tasklists": [], "tasks": [], "errors": []}
+                    
+                    # Step 1: Import Task Lists
+                    if import_tasklists:
+                        st.markdown("#### 📑 Importing Task Lists...")
+                        tasklist_df = df[df['type'] == 'tasklist'].copy()
+                        tasklist_mapping = {}  # Map original names to created IDs
+                        
+                        progress_bar = st.progress(0)
+                        for idx, row in tasklist_df.iterrows():
+                            try:
+                                tasklist_payload = {
+                                    "title": row['title'],
+                                    "description": row.get('description', ''),
+                                    "project_id": target_project_id,
+                                    "order": row.get('order', 1),
+                                    "status": row.get('status', 'incomplete')
+                                }
+                                
+                                # Create task list via API
+                                result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
+                                if result:
+                                    tasklist_id = result.get('id')
+                                    tasklist_mapping[row['title']] = tasklist_id
+                                    import_results["tasklists"].append({
+                                        "title": row['title'],
+                                        "id": tasklist_id,
+                                        "status": "success"
+                                    })
+                                    st.success(f"✅ Created task list: {row['title']} (ID: {tasklist_id})")
+                                else:
+                                    import_results["errors"].append(f"Failed to create task list: {row['title']}")
+                                    st.error(f"❌ Failed to create task list: {row['title']}")
+                                
+                                progress_bar.progress((idx + 1) / len(tasklist_df))
+                                time.sleep(0.1)  # Rate limiting
+                                
+                            except Exception as e:
+                                error_msg = f"Error creating task list '{row['title']}': {str(e)}"
+                                import_results["errors"].append(error_msg)
+                                st.error(f"❌ {error_msg}")
+                        
+                        progress_bar.empty()
+                    
+                    # Step 2: Import Tasks
+                    if import_tasks:
+                        st.markdown("#### ✅ Importing Tasks...")
+                        task_df = df[df['type'] == 'task'].copy()
+                        
+                        progress_bar = st.progress(0)
+                        for idx, row in task_df.iterrows():
+                            try:
+                                # Find the task list ID
+                                task_list_name = row.get('task_list_name', '')
+                                task_list_id = tasklist_mapping.get(task_list_name)
+                                
+                                if not task_list_id and task_list_name:
+                                    # Try to find existing task list by name
+                                    existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
+                                    for tl in existing_tasklists:
+                                        if tl.get('title') == task_list_name:
+                                            task_list_id = tl.get('id')
+                                            break
+                                
+                                task_payload = {
+                                    "title": row['title'],
+                                    "description": row.get('description', ''),
+                                    "project_id": target_project_id,
+                                    "order": row.get('order', 1),
+                                    "status": row.get('status', 'incomplete'),
+                                    "complexity": row.get('complexity', 'basic'),
+                                    "priority": row.get('priority', 'medium')
+                                }
+                                
+                                if task_list_id:
+                                    task_payload["task_list_id"] = task_list_id
+                                
+                                # Handle dates if present
+                                if pd.notna(row.get('start_at')) and row.get('start_at') not in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                    task_payload["start_at"] = row['start_at']
+                                
+                                if pd.notna(row.get('due_date')) and row.get('due_date') not in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                    task_payload["due_date"] = row['due_date']
+                                
+                                # Create task via API
+                                result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
+                                if result:
+                                    task_id = result.get('id')
+                                    import_results["tasks"].append({
+                                        "title": row['title'],
+                                        "id": task_id,
+                                        "task_list": task_list_name,
+                                        "status": "success"
+                                    })
+                                    st.success(f"✅ Created task: {row['title']} (ID: {task_id})")
+                                else:
+                                    import_results["errors"].append(f"Failed to create task: {row['title']}")
+                                    st.error(f"❌ Failed to create task: {row['title']}")
+                                
+                                progress_bar.progress((idx + 1) / len(task_df))
+                                time.sleep(0.1)  # Rate limiting
+                                
+                            except Exception as e:
+                                error_msg = f"Error creating task '{row['title']}': {str(e)}"
+                                import_results["errors"].append(error_msg)
+                                st.error(f"❌ {error_msg}")
+                        
+                        progress_bar.empty()
+                    
+                    # Import Summary
+                    st.markdown("---")
+                    st.markdown("### 📊 Import Summary")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Task Lists Created", len(import_results["tasklists"]))
+                    col2.metric("Tasks Created", len(import_results["tasks"]))
+                    col3.metric("Errors", len(import_results["errors"]))
+                    
+                    # Show errors if any
+                    if import_results["errors"]:
+                        with st.expander("❌ View Errors"):
+                            for error in import_results["errors"]:
+                                st.error(error)
+                    
+                    # Download import results
+                    if import_results["tasklists"] or import_results["tasks"]:
+                        download_json(import_results, "import_results.json", label="⬇️ Download Import Results")
+                        
+                        if target_project_id:
+                            st.info(f"💡 Import completed for project ID: {target_project_id}. You can now view the imported data by selecting this project.")
+        
+        except Exception as e:
+            st.error(f"Error reading CSV file: {str(e)}")
 
 # -------------------------------------
 # TAB 3: CUSTOM POST TYPES
