@@ -691,14 +691,18 @@ with tab2:
                                 
                                 if task_list_id:
                                     task_payload["task_list_id"] = task_list_id
+                                # Handle dates if present, converting NaN or empty strings to None
+                                start_at_val = row.get(\'start_at\')
+                                if pd.isna(start_at_val) or start_at_val in [\'\', "{\'date\': None, \'time\': None, \'datetime\': None, \'timezone\': \'Etc/UTC\', \'timestamp\': None}"]:
+                                    task_payload["start_at"] = None
+                                else:
+                                    task_payload["start_at"] = start_at_val
                                 
-                                # Handle dates if present
-                                if pd.notna(row.get('start_at')) and row.get('start_at') not in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
-                                    task_payload["start_at"] = row['start_at']
-                                
-                                if pd.notna(row.get('due_date')) and row.get('due_date') not in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
-                                    task_payload["due_date"] = row['due_date']
-                                
+                                due_date_val = row.get(\'due_date\')
+                                if pd.isna(due_date_val) or due_date_val in [\'\', "{\'date\': None, \'time\': None, \'datetime\': None, \'timezone\': \'Etc/UTC\', \'timestamp\': None}"]:
+                                    task_payload["due_date"] = None
+                                else:
+                                    task_payload["due_date"] = due_date_val
                                 # Create task via API
                                 result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
                                 if result:
