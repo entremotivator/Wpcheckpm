@@ -692,14 +692,14 @@ with tab2:
                                 if task_list_id:
                                     task_payload["task_list_id"] = task_list_id
                                 # Handle dates if present, converting NaN or empty strings to None
-                                start_at_val = row.get(\'start_at\')
-                                if pd.isna(start_at_val) or start_at_val in [\'\', "{\'date\': None, \'time\': None, \'datetime\': None, \'timezone\': \'Etc/UTC\', \'timestamp\': None}"]:
+                                start_at_val = row.get('start_at')
+                                if pd.isna(start_at_val) or start_at_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
                                     task_payload["start_at"] = None
                                 else:
                                     task_payload["start_at"] = start_at_val
                                 
-                                due_date_val = row.get(\'due_date\')
-                                if pd.isna(due_date_val) or due_date_val in [\'\', "{\'date\': None, \'time\': None, \'datetime\': None, \'timezone\': \'Etc/UTC\', \'timestamp\': None}"]:
+                                due_date_val = row.get('due_date')
+                                if pd.isna(due_date_val) or due_date_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
                                     task_payload["due_date"] = None
                                 else:
                                     task_payload["due_date"] = due_date_val
