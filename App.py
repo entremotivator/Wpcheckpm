@@ -94,16 +94,16 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         json_response = res.json()
         # The API might return the actual object directly or nested under a 'data' key
         if isinstance(json_response, dict):
-            if 'data' in json_response:
+            if 'id' in json_response: # If 'id' is directly in the top-level response, return the whole response
+                return json_response
+            elif 'data' in json_response:
                 # If 'data' is a dictionary, return it
                 if isinstance(json_response['data'], dict):
                     return json_response['data']
                 # If 'data' is a list, it might contain the created item, try to get the first one
                 elif isinstance(json_response['data'], list) and json_response['data']:
                     return json_response['data'][0]
-            # If 'data' is not present, or not a dict/list, return the response directly
-            return json_response
-        # If not a dict, return directly (should ideally be a dict from API)
+        # If no 'id' or 'data' key, or not a dict, return the response directly
         return json_response
     except requests.HTTPError as e:
         try:
@@ -652,12 +652,8 @@ with tab2:
                                 st.write("API Response for Task List Creation:")
                                 st.json(result)
                                 if result and isinstance(result, dict):
-                                    # Ensure the ID is extracted correctly, handling potential nesting
                                     tasklist_id = result.get('id')
-                                    if tasklist_id is None and 'data' in result and isinstance(result['data'], dict):
-                                        tasklist_id = result['data'].get('id')
-                                    
-                                    if tasklist_id:
+                                    if tasklist_id: 
                                         tasklist_mapping[row['title']] = tasklist_id
                                         import_results["tasklists"].append({
                                             "title": row['title'],
