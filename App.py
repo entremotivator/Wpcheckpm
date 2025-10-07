@@ -157,6 +157,10 @@ def download_json(obj, filename: str, label="Download JSON"):
 
 def extract_title(p: dict) -> str:
     """Safely extract the title from WP REST API project or CPT object."""
+    # Handle nested data structure
+    if "data" in p and isinstance(p["data"], dict):
+        p = p["data"]
+    
     t = p.get("title")
     if isinstance(t, dict):
         return t.get("rendered", "")
@@ -178,19 +182,26 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
         
         if not data:
             break
-            
-        if isinstance(data, list):
-            items = [item for item in data if isinstance(item, dict)]
-            all_items.extend(items)
-            if len(items) < 100:
+        
+        # Handle nested data structure with {"data": {...}, "meta": {...}}
+        if isinstance(data, dict) and "data" in data:
+            # Single item wrapped in data/meta structure
+            if isinstance(data["data"], dict):
+                all_items.append(data)
                 break
-        elif isinstance(data, dict):
-            if "data" in data and isinstance(data["data"], list):
+            # List of items in data array
+            elif isinstance(data["data"], list):
                 items = [item for item in data["data"] if isinstance(item, dict)]
                 all_items.extend(items)
                 if len(items) < 100:
                     break
             else:
+                break
+        # Handle direct list response
+        elif isinstance(data, list):
+            items = [item for item in data if isinstance(item, dict)]
+            all_items.extend(items)
+            if len(items) < 100:
                 break
         else:
             break
@@ -270,21 +281,64 @@ with tab1:
         for p in projects:
             if not isinstance(p, dict):
                 continue
-            desc = p.get("description") or ""
+            
+            # Handle nested data structure
+            project_data = p.get("data", p)
+            
+            # Extract description
+            desc = project_data.get("description") or ""
             if isinstance(desc, dict):
-                desc = desc.get("rendered", "")
+                desc = desc.get("rendered") or desc.get("html") or desc.get("content") or ""
             desc_preview = str(desc)[:50] + "..." if desc else ""
             
+            # Extract meta statistics
+            meta = project_data.get("meta", {})
+            if isinstance(meta, dict):
+                meta_data = meta.get("data", meta)
+                total_tasks = meta_data.get("total_tasks", 0)
+                total_task_lists = meta_data.get("total_task_lists", 0)
+                complete_tasks = meta_data.get("total_complete_tasks", 0)
+                incomplete_tasks = meta_data.get("total_incomplete_tasks", 0)
+            else:
+                total_tasks = 0
+                total_task_lists = 0
+                complete_tasks = 0
+                incomplete_tasks = 0
+            
+            # Extract created date
+            created = project_data.get("created_at", {})
+            if isinstance(created, dict):
+                created_str = created.get("datetime") or created.get("date") or ""
+            else:
+                created_str = created or ""
+            
             rows.append({
-                "ID": p.get("id"),
-                "Title": extract_title(p),
-                "Status": p.get("status") or "",
-                "Created": p.get("created_at") or p.get("created") or "",
+                "ID": project_data.get("id"),
+                "Title": extract_title(project_data),
+                "Status": project_data.get("status") or "",
+                "Created": created_str,
+                "Task Lists": total_task_lists,
+                "Total Tasks": total_tasks,
+                "Complete": complete_tasks,
+                "Incomplete": incomplete_tasks,
                 "Description": desc_preview
             })
         
         df = pd.DataFrame(rows)
         st.dataframe(df, use_container_width=True, height=400)
+        
+        # Show aggregate statistics
+        if len(rows) > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Projects", len(rows))
+            with col2:
+                st.metric("Total Task Lists", df["Task Lists"].sum())
+            with col3:
+                st.metric("Total Tasks", df["Total Tasks"].sum())
+            with col4:
+                completion_rate = (df["Complete"].sum() / df["Total Tasks"].sum() * 100) if df["Total Tasks"].sum() > 0 else 0
+                st.metric("Completion Rate", f"{completion_rate:.1f}%")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -298,6 +352,86 @@ with tab1:
                 file_name="wp_projects.csv",
                 mime="text/csv"
             )
+        
+        # Raw JSON Viewer/Editor
+        st.markdown("---")
+        st.subheader("🔍 View/Edit Raw JSON")
+        
+        project_ids = {f"{extract_title(p.get('data', p))} (ID: {p.get('data', p).get('id')})": p for p in projects}
+        selected_project_for_json = st.selectbox(
+            "Select Project to View/Edit JSON",
+            options=list(project_ids.keys()),
+            key="json_project_select"
+        )
+        
+        if selected_project_for_json:
+            selected_proj = project_ids[selected_project_for_json]
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.info("Edit the JSON below and click 'Update Project' to save changes")
+            with col2:
+                if st.button("🔄 Clone Project"):
+                    project_data = selected_proj.get("data", selected_proj)
+                    clone_payload = {
+                        "title": f"{extract_title(project_data)} (Copy)",
+                        "description": project_data.get("description"),
+                        "status": project_data.get("status"),
+                    }
+                    res = wp_post_json(projects_url, clone_payload)
+                    if res:
+                        st.success(f"✅ Project cloned! New ID: {res.get('id')}")
+                        time.sleep(1)
+                        st.rerun()
+            
+            json_editor = st.text_area(
+                "Project JSON",
+                value=json.dumps(selected_proj, indent=2),
+                height=400,
+                key="json_editor"
+            )
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("💾 Update Project", type="primary", use_container_width=True):
+                    try:
+                        updated_data = json.loads(json_editor)
+                        project_data = updated_data.get("data", updated_data)
+                        project_id = project_data.get("id")
+                        
+                        if project_id:
+                            # Clean the payload - remove read-only fields
+                            payload = {}
+                            editable_fields = ["title", "description", "status", "budget", "color_code", "est_completion_date"]
+                            for field in editable_fields:
+                                if field in project_data:
+                                    payload[field] = project_data[field]
+                            
+                            res = wp_put_json(f"{projects_url}/{project_id}", payload)
+                            if res:
+                                st.success("✅ Project updated successfully!")
+                                time.sleep(1)
+                                st.rerun()
+                        else:
+                            st.error("❌ No project ID found in JSON")
+                    except json.JSONDecodeError as e:
+                        st.error(f"❌ Invalid JSON: {e}")
+            
+            with col2:
+                if st.button("🗑️ Delete Project", use_container_width=True):
+                    project_data = selected_proj.get("data", selected_proj)
+                    project_id = project_data.get("id")
+                    if project_id:
+                        if st.checkbox(f"Confirm delete project {project_id}?"):
+                            res = wp_delete_json(f"{projects_url}/{project_id}")
+                            if res:
+                                st.success("✅ Project deleted!")
+                                st.session_state["projects"] = []
+                                time.sleep(1)
+                                st.rerun()
+            
+            with col3:
+                download_json(selected_proj, f"project_{project_data.get('id')}.json", label="⬇️ Export JSON")
 
         if include_tasks:
             st.markdown("---")
@@ -308,7 +442,10 @@ with tab1:
                     progress_bar = st.progress(0)
                     
                     for idx, p in enumerate(projects):
-                        pid = p.get("id")
+                        # Handle nested data structure
+                        project_data = p.get("data", p)
+                        pid = project_data.get("id")
+                        
                         if pid:
                             task_lists = wp_get_json(f"{projects_url}/{pid}/task-lists", silent_on_error=True)
                             if task_lists is None:
@@ -323,8 +460,13 @@ with tab1:
                             else:
                                 success_count += 1
                             
-                            p["task_lists"] = task_lists if isinstance(task_lists, list) else []
-                            p["tasks"] = tasks if isinstance(tasks, list) else []
+                            # Store in the original project structure
+                            if "data" in p:
+                                p["data"]["task_lists"] = task_lists if isinstance(task_lists, list) else []
+                                p["data"]["tasks"] = tasks if isinstance(tasks, list) else []
+                            else:
+                                p["task_lists"] = task_lists if isinstance(task_lists, list) else []
+                                p["tasks"] = tasks if isinstance(tasks, list) else []
                         
                         progress_bar.progress((idx + 1) / len(projects))
                     
@@ -531,14 +673,28 @@ with tab2:
             for tl in task_lists:
                 if not isinstance(tl, dict): 
                     continue
+                # Handle nested data structure
+                tl_data = tl.get("data", tl)
+                
                 tl_rows.append({
-                    "ID": tl.get("id"),
-                    "Title": extract_title(tl),
-                    "Status": tl.get("status") or "",
-                    "Task Count": tl.get("task_count") or 0
+                    "ID": tl_data.get("id"),
+                    "Title": extract_title(tl_data),
+                    "Status": tl_data.get("status") or "",
+                    "Task Count": tl_data.get("task_count") or tl_data.get("total_tasks") or 0,
+                    "Complete": tl_data.get("complete_tasks") or tl_data.get("total_complete_tasks") or 0,
+                    "Incomplete": tl_data.get("incomplete_tasks") or tl_data.get("total_incomplete_tasks") or 0
                 })
             st.dataframe(pd.DataFrame(tl_rows), use_container_width=True)
             download_json(task_lists, f"task_lists_project_{selected_project_id}.json", label="⬇️ Download Task Lists JSON")
+            
+            # Export CSV
+            csv_tl = pd.DataFrame(tl_rows).to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Task Lists CSV",
+                data=csv_tl,
+                file_name=f"task_lists_project_{selected_project_id}.csv",
+                mime="text/csv"
+            )
 
         # Display Tasks
         tasks = st.session_state.get(f"tasks_{selected_project_id}", [])
@@ -548,15 +704,36 @@ with tab2:
             for task in tasks:
                 if not isinstance(task, dict): 
                     continue
+                # Handle nested data structure
+                task_data = task.get("data", task)
+                
+                # Extract dates
+                due_date = task_data.get("due_date", {})
+                if isinstance(due_date, dict):
+                    due_date_str = due_date.get("datetime") or due_date.get("date") or ""
+                else:
+                    due_date_str = due_date or ""
+                
                 task_rows.append({
-                    "ID": task.get("id"),
-                    "Title": extract_title(task),
-                    "Task List": task.get("task_list_title") or "",
-                    "Status": task.get("status") or "",
-                    "Due Date": task.get("due_date") or ""
+                    "ID": task_data.get("id"),
+                    "Title": extract_title(task_data),
+                    "Task List": task_data.get("task_list_title") or "",
+                    "Status": task_data.get("status") or "",
+                    "Completed": task_data.get("completed") or 0,
+                    "Due Date": due_date_str,
+                    "Priority": task_data.get("priority") or ""
                 })
             st.dataframe(pd.DataFrame(task_rows), use_container_width=True)
             download_json(tasks, f"tasks_project_{selected_project_id}.json", label="⬇️ Download Tasks JSON")
+            
+            # Export CSV
+            csv_tasks = pd.DataFrame(task_rows).to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Tasks CSV",
+                data=csv_tasks,
+                file_name=f"tasks_project_{selected_project_id}.csv",
+                mime="text/csv"
+            )
 
         st.markdown("---")
         st.subheader("➕ Create New Task List")
