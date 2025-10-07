@@ -16,7 +16,6 @@ import streamlit as st
 import requests
 import json
 import pandas as pd
-import base64
 import time
 from typing import Dict, Any
 
@@ -51,9 +50,9 @@ if wp_user and wp_app_password:
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Options**")
 api_ns = st.sidebar.text_input("Project Manager API Namespace", "pm/v2")
-include_tasks = st.sidebar.checkbox("Include Task Lists & Tasks", value=True)
+include_tasks = st.sidebar.checkbox("Include Task Lists & Tasks (slow)", value=True)
 
-# URLs
+# API URLs
 projects_url = f"{wp_base}/wp-json/{api_ns}/projects"
 posts_url = f"{wp_base}/wp-json/wp/v2"
 
@@ -93,6 +92,10 @@ def wp_put_json(url: str, data: Dict[str, Any]):
         st.error(f"PUT failed: {e}")
         return None
 
+def download_json(obj, filename: str, label="Download JSON"):
+    b = json.dumps(obj, indent=2).encode("utf-8")
+    st.download_button(label=label, data=b, file_name=filename, mime="application/json")
+
 # -------------------------------------
 # Tabs
 # -------------------------------------
@@ -102,57 +105,73 @@ tab1, tab2, tab3 = st.tabs(["📁 WP Projects", "🧱 Custom Post Types", "🗄�
 # TAB 1: WP PROJECT MANAGER
 # -------------------------------------
 with tab1:
-    st.header("📁 WP Project Manager")
+    st.header("📁 WP Project Manager Projects")
+    
     if st.button("Fetch Projects"):
         with st.spinner("Fetching projects..."):
-            data = wp_get_json(projects_url, params={"per_page": 50})
-            if data:
-                st.session_state["projects"] = data
-                st.success(f"Fetched {len(data)} projects.")
+            all_projects = []
+            page = 1
+            while True:
+                data = wp_get_json(projects_url, params={"per_page": 50, "page": page})
+                if not data:
+                    break
+                if isinstance(data, list):
+                    all_projects.extend([p for p in data if isinstance(p, dict)])
+                elif isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                    all_projects.extend([p for p in data["data"] if isinstance(p, dict)])
+                else:
+                    break
+                if len(data) < 50:
+                    break
+                page += 1
+                time.sleep(0.1)
+            st.session_state["projects"] = all_projects
+            st.success(f"Fetched {len(all_projects)} projects.")
+
     projects = st.session_state.get("projects", [])
-
     if projects:
-        df = pd.DataFrame([
-            {
+        rows = []
+        for p in projects:
+            if not isinstance(p, dict):
+                continue
+            rows.append({
                 "ID": p.get("id"),
-                "Title": p.get("title") or p.get("project_title"),
+                "Title": (p.get("title") and p.get("title").get("rendered")) or p.get("project_title") or p.get("name"),
                 "Status": p.get("status"),
-                "Created": p.get("created_at") or p.get("created")
-            }
-            for p in projects
-        ])
+                "Created": p.get("created_at") or p.get("created") or ""
+            })
+        df = pd.DataFrame(rows)
         st.dataframe(df, use_container_width=True)
-
-        if st.button("Download JSON"):
-            b = json.dumps(projects, indent=2).encode("utf-8")
-            st.download_button("Download Projects JSON", b, "wp_projects.json", "application/json")
+        
+        if st.button("Download Projects JSON"):
+            download_json(projects, "wp_projects.json")
 
         if include_tasks:
-            st.info("Including task-lists & tasks for each project...")
+            st.info("Fetching task-lists & tasks for each project...")
             for p in projects:
                 pid = p.get("id")
-                p["task_lists"] = wp_get_json(f"{projects_url}/{pid}/task-lists") or []
-                p["tasks"] = wp_get_json(f"{projects_url}/{pid}/tasks") or []
+                if pid:
+                    p["task_lists"] = wp_get_json(f"{projects_url}/{pid}/task-lists") or []
+                    p["tasks"] = wp_get_json(f"{projects_url}/{pid}/tasks") or []
 
-    # Edit project section
+    # Edit project
     st.subheader("✏️ Edit Project")
     project_id = st.text_input("Enter Project ID to Edit")
     if st.button("Load Project"):
         if project_id:
-            project_data = wp_get_json(f"{projects_url}/{project_id}")
-            if project_data:
-                st.session_state["edit_project"] = project_data
+            proj = wp_get_json(f"{projects_url}/{project_id}")
+            if proj:
+                st.session_state["edit_project"] = proj
                 st.success("Project loaded successfully.")
 
     edit_project = st.session_state.get("edit_project")
     if edit_project:
-        new_title = st.text_input("Title", edit_project.get("title"))
-        new_status = st.text_input("Status", edit_project.get("status"))
-        new_desc = st.text_area("Description", edit_project.get("description", ""))
-
+        new_title = st.text_input("Title", edit_project.get("title") or "")
+        new_status = st.text_input("Status", edit_project.get("status") or "")
+        new_desc = st.text_area("Description", edit_project.get("description") or "")
         if st.button("Save Changes"):
             payload = {"title": new_title, "status": new_status, "content": new_desc}
-            res = wp_put_json(f"{projects_url}/{edit_project['id']}", payload)
+            res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
             if res:
                 st.success("✅ Project updated successfully.")
                 st.json(res)
@@ -161,36 +180,43 @@ with tab1:
 # TAB 2: CUSTOM POST TYPES
 # -------------------------------------
 with tab2:
-    st.header("🧱 Explore All Custom Post Types")
-    if st.button("Fetch Post Types"):
+    st.header("🧱 Custom Post Types")
+    
+    if st.button("Fetch All Post Types"):
         types = wp_get_json(f"{wp_base}/wp-json/wp/v2/types")
         if types:
             st.session_state["post_types"] = types
             st.json(types)
-            st.success(f"Found {len(types)} custom post types.")
+            st.success(f"Found {len(types)} post types.")
 
     post_types = st.session_state.get("post_types", {})
     if post_types:
         type_selected = st.selectbox("Select a post type", options=list(post_types.keys()))
         if st.button("Fetch Posts of this Type"):
-            data = wp_get_json(f"{posts_url}/{type_selected}", params={"per_page": 50})
-            if data:
-                st.session_state["posts_data"] = data
-                st.success(f"Fetched {len(data)} posts for '{type_selected}'.")
+            posts = wp_get_json(f"{posts_url}/{type_selected}", params={"per_page": 50})
+            if posts:
+                posts_list = [p for p in posts if isinstance(p, dict)]
+                st.session_state["posts_data"] = posts_list
+                st.success(f"Fetched {len(posts_list)} posts.")
         posts_data = st.session_state.get("posts_data", [])
         if posts_data:
-            st.dataframe(pd.DataFrame([
-                {"ID": p["id"], "Title": p.get("title", {}).get("rendered", ""), "Status": p["status"]}
+            df = pd.DataFrame([
+                {
+                    "ID": p.get("id"),
+                    "Title": (p.get("title") and p.get("title").get("rendered")) or "",
+                    "Status": p.get("status") or ""
+                }
                 for p in posts_data
-            ]), use_container_width=True)
-            b = json.dumps(posts_data, indent=2).encode("utf-8")
-            st.download_button("Download Posts JSON", b, f"{type_selected}_export.json", "application/json")
+            ])
+            st.dataframe(df, use_container_width=True)
+            download_json(posts_data, f"{type_selected}_export.json", label="Download Posts JSON")
 
 # -------------------------------------
 # TAB 3: DB EXPORT/IMPORT
 # -------------------------------------
 with tab3:
     st.header("🗄️ Database Export / Import (Advanced)")
+    
     if not HAS_PYMYSQL:
         st.warning("Install `pymysql` to enable DB features: `pip install pymysql`")
     else:
@@ -212,7 +238,7 @@ with tab3:
                 st.error(f"Connection failed: {e}")
 
 # -------------------------------------
-# FOOTER
+# Footer
 # -------------------------------------
 st.markdown("---")
-st.caption("Developed for WordPress REST API exploration — supports WP Project Manager and any custom post types.")
+st.caption("Developed for WordPress REST API exploration — supports WP Project Manager and all custom post types. Handles App Password authentication safely.")
