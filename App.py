@@ -65,27 +65,39 @@ st.caption("Fetch, export, import, and edit WordPress Project Manager data and a
 # Helper functions
 # -------------------------------------
 def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool = False) -> Optional[Any]:
-    """Fetch JSON from WordPress REST API."""
+    """
+    Fetch JSON from WordPress REST API and handle errors gracefully.
+    
+    Args:
+        url (str): The endpoint URL to fetch.
+        params (Dict[str, Any], optional): Query parameters for the request.
+        silent_on_error (bool): If True, suppress error reporting in Streamlit.
+
+    Returns:
+        Optional[Any]: Parsed JSON data if successful, else None.
+    """
     try:
         res = requests.get(url, headers=headers, auth=auth, params=params, timeout=30)
         res.raise_for_status()
-        return res.json()
+        return res.json()  # Successful response
     except requests.HTTPError as e:
+        # HTTP error responses (4xx, 5xx)
+        error_msg = f"HTTP {res.status_code}: {e}"
+        try:
+            error_data = res.json()
+            if isinstance(error_data, dict):
+                error_msg += f"\n{error_data.get('message', res.text)}"
+        except Exception:
+            error_msg += f"\n{res.text}"
         if not silent_on_error:
-            error_msg = f"HTTP {res.status_code}: {e}"
-            try:
-                error_data = res.json()
-                if isinstance(error_data, dict):
-                    error_msg += f"\n{error_data.get(\'message\', res.text)}"
-            except:
-                error_msg += f"\n{res.text}"
             st.error(error_msg)
-
         return None
     except Exception as e:
+        # Non-HTTP errors (network, parsing, etc.)
         if not silent_on_error:
             st.error(f"Error connecting to {url}: {e}")
         return None
+
 
 def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     """Create a new resource via POST request."""
