@@ -449,6 +449,7 @@ with tab2:
                 st.dataframe(df_import)
                 
                 imported_count = 0
+                failed_count = 0
                 endpoint_base = f"{projects_url}/{selected_project_id}"
                 
                 if import_type == "Task Lists":
@@ -460,7 +461,13 @@ with tab2:
                 
                 for index, row in df_import.iterrows():
                     item_id = row.get("id") or row.get("ID")
+                    
+                    # Convert row to dict and clean NaN values
                     payload = row.to_dict()
+                    # Replace NaN with None (which becomes null in JSON)
+                    payload = {k: (None if pd.isna(v) else v) for k, v in payload.items()}
+                    # Remove None values to avoid sending unnecessary nulls
+                    payload = {k: v for k, v in payload.items() if v is not None}
                     
                     if override_existing and item_id:
                         # Check if item exists before attempting to update
@@ -469,19 +476,28 @@ with tab2:
                             res = wp_put_json(f"{endpoint}/{item_id}", payload)
                             if res:
                                 imported_count += 1
+                            else:
+                                failed_count += 1
                         else:
                             st.warning(f"{item_type} with ID {item_id} not found for update. Creating new instead.")
                             res = wp_post_json(endpoint, payload)
                             if res:
                                 imported_count += 1
+                            else:
+                                failed_count += 1
                     else:
                         res = wp_post_json(endpoint, payload)
                         if res:
                             imported_count += 1
+                        else:
+                            failed_count += 1
                     
                     time.sleep(0.1)  # Be kind to the API
                 
-                st.success(f"Successfully imported/updated {imported_count} {item_type}(s).")
+                if imported_count > 0:
+                    st.success(f"✅ Successfully imported/updated {imported_count} {item_type}(s).")
+                if failed_count > 0:
+                    st.error(f"❌ Failed to import {failed_count} {item_type}(s). Check error messages above.")
                 st.info("Import process completed. Please re-fetch data to see changes.")
 
         # Display expandable task lists
