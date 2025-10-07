@@ -40,7 +40,7 @@ st.sidebar.title("🔐 WordPress Connection")
 
 wp_base = st.sidebar.text_input("WordPress Site URL", "https://videmiservices.com").rstrip("/")
 wp_user = st.sidebar.text_input("Username or Email")
-wp_app_password = st.sidebar.text_input("App Password", type="password", help="Use WordPress App Passwords under Users → Profile → App Passwords")
+wp_app_password = st.sidebar.text_input("App Password", type="password", help="Use WordPress App Passwords under Users → Profile → App Password")
 
 auth = None
 headers = {"Accept": "application/json"}
@@ -96,6 +96,18 @@ def download_json(obj, filename: str, label="Download JSON"):
     b = json.dumps(obj, indent=2).encode("utf-8")
     st.download_button(label=label, data=b, file_name=filename, mime="application/json")
 
+def extract_title(p: dict) -> str:
+    """
+    Safely extract the title from WP REST API project or CPT object.
+    Handles title as dict (with 'rendered') or string, plus fallback keys.
+    """
+    t = p.get("title")
+    if isinstance(t, dict):
+        return t.get("rendered", "")
+    elif isinstance(t, str):
+        return t
+    return p.get("project_title") or p.get("name") or ""
+
 # -------------------------------------
 # Tabs
 # -------------------------------------
@@ -136,8 +148,8 @@ with tab1:
                 continue
             rows.append({
                 "ID": p.get("id"),
-                "Title": (p.get("title") and p.get("title").get("rendered")) or p.get("project_title") or p.get("name"),
-                "Status": p.get("status"),
+                "Title": extract_title(p),
+                "Status": p.get("status") or "",
                 "Created": p.get("created_at") or p.get("created") or ""
             })
         df = pd.DataFrame(rows)
@@ -166,7 +178,7 @@ with tab1:
 
     edit_project = st.session_state.get("edit_project")
     if edit_project:
-        new_title = st.text_input("Title", edit_project.get("title") or "")
+        new_title = st.text_input("Title", extract_title(edit_project))
         new_status = st.text_input("Status", edit_project.get("status") or "")
         new_desc = st.text_area("Description", edit_project.get("description") or "")
         if st.button("Save Changes"):
@@ -203,7 +215,7 @@ with tab2:
             df = pd.DataFrame([
                 {
                     "ID": p.get("id"),
-                    "Title": (p.get("title") and p.get("title").get("rendered")) or "",
+                    "Title": extract_title(p),
                     "Status": p.get("status") or ""
                 }
                 for p in posts_data
