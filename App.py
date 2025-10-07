@@ -680,13 +680,13 @@ with tab2:
                                             break
                                 
                                 task_payload = {
-                                    "title": row['title'],
-                                    "description": row.get('description', ''),
+                                    "title": str(row["title"]) if pd.notna(row.get("title")) else "",
+                                    "description": str(row.get("description", "")) if pd.notna(row.get("description")) else "",
                                     "project_id": target_project_id,
-                                    "order": row.get('order', 1),
-                                    "status": row.get('status', 'incomplete'),
-                                    "complexity": row.get('complexity', 'basic'),
-                                    "priority": row.get('priority', 'medium')
+                                    "order": int(row.get("order", 1)) if pd.notna(row.get("order")) else 1,
+                                    "status": str(row.get("status", "incomplete")) if pd.notna(row.get("status")) else "incomplete",
+                                    "complexity": str(row.get("complexity", "basic")) if pd.notna(row.get("complexity")) else "basic",
+                                    "priority": str(row.get("priority", "medium")) if pd.notna(row.get("priority")) else "medium"
                                 }
                                 
                                 if task_list_id:
