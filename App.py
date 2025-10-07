@@ -18,6 +18,7 @@ import json
 import pandas as pd
 import time
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 
 # Optional DB
 try:
@@ -50,7 +51,7 @@ if wp_user and wp_app_password:
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Options**")
 api_ns = st.sidebar.text_input("Project Manager API Namespace", "pm/v2")
-include_tasks = st.sidebar.checkbox("Include Task Lists & Tasks", value=False)
+include_tasks = st.sidebar.checkbox("Auto-fetch Task Metadata", value=True)
 show_raw_json = st.sidebar.checkbox("Show Raw JSON Responses", value=False)
 
 # API URLs
@@ -64,17 +65,7 @@ st.caption("Fetch, export, import, and edit WordPress Project Manager data and a
 # Helper functions
 # -------------------------------------
 def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool = False) -> Optional[Any]:
-    """
-    Fetch JSON from WordPress REST API.
-    
-    Args:
-        url: The API endpoint URL
-        params: Query parameters
-        silent_on_error: If True, suppress error messages (useful for permission errors)
-    
-    Returns:
-        JSON response or None on error
-    """
+    """Fetch JSON from WordPress REST API."""
     try:
         res = requests.get(url, headers=headers, auth=auth, params=params, timeout=30)
         res.raise_for_status()
@@ -145,16 +136,23 @@ def download_json(obj, filename: str, label="Download JSON"):
     st.download_button(label=label, data=b, file_name=filename, mime="application/json")
 
 def extract_title(p: dict) -> str:
-    """
-    Safely extract the title from WP REST API project or CPT object.
-    Handles title as dict (with 'rendered') or string, plus fallback keys.
-    """
+    """Safely extract the title from WP REST API project or CPT object."""
     t = p.get("title")
     if isinstance(t, dict):
         return t.get("rendered", "")
     elif isinstance(t, str):
         return t
     return p.get("project_title") or p.get("name") or ""
+
+def extract_meta_totals(project: dict) -> dict:
+    """Extract meta totals from project data."""
+    if isinstance(project, dict):
+        meta = project.get("meta", {})
+        if isinstance(meta, dict):
+            data = meta.get("data", {})
+            if isinstance(data, dict):
+                return data
+    return {}
 
 def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
     """Fetch all pages of results from a paginated endpoint."""
@@ -182,6 +180,9 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
                 all_items.extend(items)
                 if len(items) < 100:
                     break
+            elif "data" in data and isinstance(data["data"], dict):
+                all_items.append(data["data"])
+                break
             else:
                 break
         else:
@@ -228,19 +229,46 @@ with tab1:
     if projects:
         st.subheader(f"📊 Projects Overview ({len(projects)} total)")
         
+        # Show aggregate stats
+        total_tasks = 0
+        total_complete = 0
+        total_incomplete = 0
+        total_files = 0
+        
+        for p in projects:
+            meta = extract_meta_totals(p)
+            total_tasks += meta.get("total_tasks", 0)
+            total_complete += meta.get("total_complete_tasks", 0)
+            total_incomplete += meta.get("total_incomplete_tasks", 0)
+            total_files += meta.get("total_files", 0)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Tasks", total_tasks)
+        col2.metric("Complete", total_complete)
+        col3.metric("Incomplete", total_incomplete)
+        col4.metric("Files", total_files)
+        
+        st.markdown("---")
+        
         rows = []
         for p in projects:
             if not isinstance(p, dict):
                 continue
+            
             desc = p.get("description") or ""
             if isinstance(desc, dict):
-                desc = desc.get("rendered", "")
+                desc = desc.get("rendered", "") or desc.get("content", "")
             desc_preview = str(desc)[:50] + "..." if desc else ""
+            
+            meta = extract_meta_totals(p)
             
             rows.append({
                 "ID": p.get("id"),
                 "Title": extract_title(p),
                 "Status": p.get("status") or "",
+                "Tasks": meta.get("total_tasks", 0),
+                "Complete": meta.get("total_complete_tasks", 0),
+                "Files": meta.get("total_files", 0),
                 "Created": p.get("created_at") or p.get("created") or "",
                 "Description": desc_preview
             })
@@ -261,98 +289,158 @@ with tab1:
                 mime="text/csv"
             )
 
-        # Fetch tasks if enabled
-        if include_tasks:
-            st.markdown("---")
-            if st.button("🔄 Fetch Task Lists & Tasks for All Projects"):
-                with st.spinner("Fetching task-lists & tasks..."):
-                    success_count = 0
-                    permission_errors = 0
-                    progress_bar = st.progress(0)
-                    
-                    for idx, p in enumerate(projects):
-                        pid = p.get("id")
-                        if pid:
-                            # Try different endpoint patterns
-                            task_lists = wp_get_json(f"{projects_url}/{pid}/task-lists", silent_on_error=True)
-                            if task_lists is None:
-                                task_lists = wp_get_json(f"{wp_base}/wp-json/{api_ns}/projects/{pid}/task_lists", silent_on_error=True)
-                            
-                            tasks = wp_get_json(f"{projects_url}/{pid}/tasks", silent_on_error=True)
-                            if tasks is None:
-                                tasks = wp_get_json(f"{wp_base}/wp-json/{api_ns}/task-lists/{pid}/tasks", silent_on_error=True)
-                            
-                            if task_lists is None and tasks is None:
-                                permission_errors += 1
-                            else:
-                                success_count += 1
-                            
-                            p["task_lists"] = task_lists if isinstance(task_lists, list) else []
-                            p["tasks"] = tasks if isinstance(tasks, list) else []
-                        
-                        progress_bar.progress((idx + 1) / len(projects))
-                    
-                    progress_bar.empty()
-                    
-                    if permission_errors > 0:
-                        st.warning(f"⚠️ {permission_errors} project(s) returned permission errors or no data. Your account may not have access to these tasks.")
-                    if success_count > 0:
-                        st.success(f"✅ Successfully fetched tasks for {success_count} project(s).")
-
-    # Edit project
+    # Project Management Section
     st.markdown("---")
-    st.subheader("✏️ Edit Project")
+    st.subheader("🛠️ Project Management")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        project_id = st.text_input("Enter Project ID to Edit", key="edit_project_id")
-    with col2:
-        load_btn = st.button("📥 Load Project", use_container_width=True)
+    action_tabs = st.tabs(["✏️ Edit", "➕ Create", "📋 Clone", "📥 Import"])
     
-    if load_btn and project_id:
-        with st.spinner("Loading project..."):
-            proj = wp_get_json(f"{projects_url}/{project_id}")
-            if proj:
-                st.session_state["edit_project"] = proj
-                st.success("✅ Project loaded successfully.")
-                if show_raw_json:
-                    with st.expander("Raw JSON"):
-                        st.json(proj)
-
-    edit_project = st.session_state.get("edit_project")
-    if edit_project:
-        with st.form("edit_project_form"):
-            new_title = st.text_input("Title", extract_title(edit_project))
-            new_status = st.selectbox("Status", ["active", "pending", "completed", "archived"], 
-                                     index=["active", "pending", "completed", "archived"].index(edit_project.get("status", "active")) if edit_project.get("status") in ["active", "pending", "completed", "archived"] else 0)
-            new_desc = st.text_area("Description", edit_project.get("description") or "", height=150)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True)
-            with col2:
-                delete_btn = st.form_submit_button("🗑️ Delete Project", use_container_width=True)
-            
-            if save_btn:
-                payload = {"title": new_title, "status": new_status, "description": new_desc}
-                res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
-                if res:
-                    st.success("✅ Project updated successfully.")
-                    st.session_state["edit_project"] = res
+    # EDIT TAB
+    with action_tabs[0]:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            project_id = st.text_input("Enter Project ID to Edit", key="edit_project_id")
+        with col2:
+            load_btn = st.button("📥 Load Project", use_container_width=True)
+        
+        if load_btn and project_id:
+            with st.spinner("Loading project..."):
+                proj = wp_get_json(f"{projects_url}/{project_id}")
+                if proj:
+                    # Handle nested data structure
+                    if isinstance(proj, dict) and "data" in proj:
+                        proj = proj["data"]
+                    st.session_state["edit_project"] = proj
+                    st.success("✅ Project loaded successfully.")
                     if show_raw_json:
-                        st.json(res)
-            
-            if delete_btn:
-                if st.session_state.get("confirm_delete"):
-                    res = wp_delete_json(f"{projects_url}/{edit_project.get('id')}")
+                        with st.expander("Raw JSON"):
+                            st.json(proj)
+
+        edit_project = st.session_state.get("edit_project")
+        if edit_project:
+            with st.form("edit_project_form"):
+                new_title = st.text_input("Title", extract_title(edit_project))
+                new_status = st.selectbox("Status", ["incomplete", "active", "pending", "completed", "archived"], 
+                                         index=["incomplete", "active", "pending", "completed", "archived"].index(edit_project.get("status", "incomplete")) if edit_project.get("status") in ["incomplete", "active", "pending", "completed", "archived"] else 0)
+                
+                desc_val = edit_project.get("description", "")
+                if isinstance(desc_val, dict):
+                    desc_val = desc_val.get("content", "") or desc_val.get("html", "")
+                new_desc = st.text_area("Description", desc_val or "", height=150)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                with col2:
+                    delete_btn = st.form_submit_button("🗑️ Delete Project", use_container_width=True)
+                
+                if save_btn:
+                    payload = {"title": new_title, "status": new_status, "description": new_desc}
+                    res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
                     if res:
-                        st.success("✅ Project deleted successfully.")
-                        st.session_state.pop("edit_project", None)
-                        st.session_state.pop("confirm_delete", None)
-                        st.rerun()
+                        st.success("✅ Project updated successfully.")
+                        st.session_state["edit_project"] = res
+                        if show_raw_json:
+                            st.json(res)
+                
+                if delete_btn:
+                    if st.session_state.get("confirm_delete"):
+                        res = wp_delete_json(f"{projects_url}/{edit_project.get('id')}")
+                        if res:
+                            st.success("✅ Project deleted successfully.")
+                            st.session_state.pop("edit_project", None)
+                            st.session_state.pop("confirm_delete", None)
+                            st.rerun()
+                    else:
+                        st.session_state["confirm_delete"] = True
+                        st.warning("⚠️ Click Delete again to confirm deletion.")
+    
+    # CREATE TAB
+    with action_tabs[1]:
+        with st.form("create_project_form"):
+            st.write("Create a new project")
+            create_title = st.text_input("Project Title", key="create_title")
+            create_status = st.selectbox("Status", ["incomplete", "active", "pending", "completed"], key="create_status")
+            create_desc = st.text_area("Description", key="create_desc", height=150)
+            
+            if st.form_submit_button("➕ Create Project", use_container_width=True):
+                if create_title:
+                    payload = {
+                        "title": create_title,
+                        "status": create_status,
+                        "description": create_desc
+                    }
+                    res = wp_post_json(projects_url, payload)
+                    if res:
+                        st.success(f"✅ Project created successfully! ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                        if show_raw_json:
+                            st.json(res)
                 else:
-                    st.session_state["confirm_delete"] = True
-                    st.warning("⚠️ Click Delete again to confirm deletion.")
+                    st.error("Please enter a project title.")
+    
+    # CLONE TAB
+    with action_tabs[2]:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            clone_id = st.text_input("Enter Project ID to Clone", key="clone_id")
+        with col2:
+            clone_btn = st.button("📋 Clone", use_container_width=True)
+        
+        if clone_btn and clone_id:
+            with st.spinner("Cloning project..."):
+                proj = wp_get_json(f"{projects_url}/{clone_id}")
+                if proj:
+                    if isinstance(proj, dict) and "data" in proj:
+                        proj = proj["data"]
+                    
+                    title = extract_title(proj)
+                    desc = proj.get("description", "")
+                    if isinstance(desc, dict):
+                        desc = desc.get("content", "") or desc.get("html", "")
+                    
+                    clone_payload = {
+                        "title": f"{title} (Copy)",
+                        "status": proj.get("status", "incomplete"),
+                        "description": desc
+                    }
+                    
+                    res = wp_post_json(projects_url, clone_payload)
+                    if res:
+                        st.success(f"✅ Project cloned successfully! New ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                        if show_raw_json:
+                            st.json(res)
+    
+    # IMPORT TAB
+    with action_tabs[3]:
+        st.write("Import project from JSON file")
+        uploaded_file = st.file_uploader("Choose a JSON file", type=['json'], key="import_json")
+        
+        if uploaded_file is not None:
+            try:
+                import_data = json.load(uploaded_file)
+                st.json(import_data)
+                
+                if st.button("📥 Import Project", use_container_width=True):
+                    # Extract relevant fields
+                    if isinstance(import_data, dict):
+                        if "data" in import_data:
+                            import_data = import_data["data"]
+                        
+                        payload = {
+                            "title": extract_title(import_data),
+                            "status": import_data.get("status", "incomplete"),
+                            "description": import_data.get("description", "")
+                        }
+                        
+                        res = wp_post_json(projects_url, payload)
+                        if res:
+                            st.success(f"✅ Project imported successfully! ID: {res.get('id') if isinstance(res, dict) else 'N/A'}")
+                            if show_raw_json:
+                                st.json(res)
+                    else:
+                        st.error("Invalid JSON format")
+            except Exception as e:
+                st.error(f"Error reading JSON: {e}")
 
 # -------------------------------------
 # TAB 2: TASKS & TASK LISTS
@@ -367,7 +455,20 @@ with tab2:
         selected_project_label = st.selectbox("Select Project", options=list(project_options.keys()))
         selected_project_id = project_options[selected_project_label]
         
-        if st.button("🔄 Fetch Task Lists & Tasks"):
+        # Show project stats
+        selected_project = next((p for p in projects if p.get('id') == selected_project_id), None)
+        if selected_project:
+            meta = extract_meta_totals(selected_project)
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Task Lists", meta.get("total_task_lists", 0))
+            col2.metric("Total Tasks", meta.get("total_tasks", 0))
+            col3.metric("Complete", meta.get("total_complete_tasks", 0))
+            col4.metric("Incomplete", meta.get("total_incomplete_tasks", 0))
+            col5.metric("Files", meta.get("total_files", 0))
+        
+        st.markdown("---")
+        
+        if st.button("🔄 Fetch Task Lists & Tasks", use_container_width=True):
             with st.spinner("Fetching task data..."):
                 task_lists = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists")
                 tasks = wp_get_json(f"{projects_url}/{selected_project_id}/tasks")
@@ -375,12 +476,22 @@ with tab2:
                 if task_lists or tasks:
                     st.session_state["current_task_lists"] = task_lists or []
                     st.session_state["current_tasks"] = tasks or []
+                    st.session_state["current_project_id"] = selected_project_id
                     st.success(f"✅ Fetched {len(task_lists or [])} task lists and {len(tasks or [])} tasks.")
                 else:
                     st.warning("No tasks or task lists found, or permission denied.")
         
         task_lists = st.session_state.get("current_task_lists", [])
         tasks = st.session_state.get("current_tasks", [])
+        
+        if task_lists or tasks:
+            download_col1, download_col2 = st.columns(2)
+            with download_col1:
+                if task_lists:
+                    download_json(task_lists, f"project_{selected_project_id}_task_lists.json", label="⬇️ Download Task Lists JSON")
+            with download_col2:
+                if tasks:
+                    download_json(tasks, f"project_{selected_project_id}_tasks.json", label="⬇️ Download Tasks JSON")
         
         if task_lists:
             st.subheader("📑 Task Lists")
@@ -389,7 +500,8 @@ with tab2:
                     with st.expander(f"📑 {tl.get('title', 'Untitled')} (ID: {tl.get('id')})"):
                         st.write(f"**Description:** {tl.get('description', 'No description')}")
                         st.write(f"**Status:** {tl.get('status', 'N/A')}")
-                        st.json(tl)
+                        if show_raw_json:
+                            st.json(tl)
         
         if tasks:
             st.subheader("✅ Tasks")
@@ -401,13 +513,13 @@ with tab2:
                         "Title": task.get("title", ""),
                         "Status": task.get("status", ""),
                         "Priority": task.get("priority", ""),
-                        "Assignee": task.get("assignee", "")
+                        "Assignee": task.get("assignee", ""),
+                        "Completed": task.get("completed", False)
                     })
             
             if task_rows:
                 task_df = pd.DataFrame(task_rows)
-                st.dataframe(task_df, use_container_width=True)
-                download_json(tasks, f"project_{selected_project_id}_tasks.json", label="⬇️ Download Tasks JSON")
+                st.dataframe(task_df, use_container_width=True, height=400)
 
 # -------------------------------------
 # TAB 3: CUSTOM POST TYPES
@@ -497,7 +609,6 @@ with tab4:
                 )
                 st.success("✅ Connected successfully!")
                 
-                # Show available tables
                 with con.cursor() as cursor:
                     cursor.execute("SHOW TABLES")
                     tables = [row[0] for row in cursor.fetchall()]
