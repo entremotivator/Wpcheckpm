@@ -232,12 +232,17 @@ with tab1:
         for p in projects:
             if not isinstance(p, dict):
                 continue
+            desc = p.get("description") or ""
+            if isinstance(desc, dict):
+                desc = desc.get("rendered", "")
+            desc_preview = str(desc)[:50] + "..." if desc else ""
+            
             rows.append({
                 "ID": p.get("id"),
                 "Title": extract_title(p),
                 "Status": p.get("status") or "",
                 "Created": p.get("created_at") or p.get("created") or "",
-                "Description": (p.get("description") or "")[:50] + "..." if p.get("description") else ""
+                "Description": desc_preview
             })
         
         df = pd.DataFrame(rows)
