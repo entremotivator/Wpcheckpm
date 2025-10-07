@@ -542,9 +542,9 @@ with tab2:
                         if show_raw_json:
                             st.json(tl)
         
+        task_rows = [] # Initialize task_rows here, always defined
         if tasks:
             st.subheader("✅ Tasks")
-            task_rows = []
             for task in tasks:
                 if isinstance(task, dict):
                     task_rows.append({
@@ -555,8 +555,8 @@ with tab2:
                         "Assignee": task.get("assignee", ""),
                         "Completed": task.get("completed", False)
                     })
-            
-        if task_rows:
+        
+        if task_rows: 
             task_df = pd.DataFrame(task_rows)
             st.dataframe(task_df, width='stretch', height=400)
 
