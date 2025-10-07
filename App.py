@@ -426,15 +426,12 @@ with tab1:
                 "Fields to include:",
                 options=available_fields,
                 default=[f for f in default_project_fields if f in available_fields],
-                help="Select fields to send to WordPress"
+                key="project_fields_select"
             )
             
-            skip_empty_proj = st.checkbox("Skip empty/null values", value=True, key="skip_empty_proj")
-            
-            if import_mode != "Create New Only" and 'id' in available_fields:
-                st.info("💡 ID field identifies projects for updates (not sent in payload)")
+            skip_empty_projects = st.checkbox("Skip empty/null values", value=True, key="skip_empty_projects")
         
-        if st.button("🚀 Process Import", use_container_width=True, type="primary", key="process_projects_import"):
+        if st.button("🚀 Import Projects", use_container_width=True, type="primary", key="import_projects_btn"):
             created_count = 0
             updated_count = 0
             failed_count = 0
@@ -446,7 +443,7 @@ with tab1:
             status_text = st.empty()
             
             for idx, item in enumerate(items_to_process):
-                status_text.text(f"Processing {idx + 1}/{len(items_to_process)}...")
+                status_text.text(f"Processing project {idx + 1}/{len(items_to_process)}...")
                 
                 item_id = item.get('id') or item.get('ID')
                 
@@ -465,18 +462,17 @@ with tab1:
                     should_update = bool(item_id)
                     should_create = not bool(item_id)
                 
-                payload = clean_payload(item, selected_project_fields, skip_empty_proj)
+                payload = clean_payload(item, selected_project_fields, skip_empty_projects)
                 
-                if 'title' not in payload or not payload['title']:
-                    st.warning(f"Row {idx + 1}: Skipping - missing 'title'")
+                if 'title' not in payload or not payload.get('title'):
+                    st.warning(f"Project {idx + 1}: Skipping - missing 'title'")
                     failed_count += 1
                     continue
                 
                 if projects_test_import:
-                    st.write(f"**Action:** {'UPDATE' if should_update else 'CREATE'}")
+                    st.write(f"**Project {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
                     if should_update:
                         st.write(f"**Target ID:** {item_id}")
-                    st.write("**Payload:**")
                     st.json(payload)
                 
                 if should_update:
@@ -491,7 +487,8 @@ with tab1:
                         failed_count += 1
                 
                 elif should_create:
-                    res = wp_post_json(projects_url, payload)
+                    endpoint = projects_url
+                    res = wp_post_json(endpoint, payload)
                     if res:
                         created_count += 1
                         if projects_test_import:
@@ -573,7 +570,7 @@ with tab1:
                     st.warning("⚠️ Click Delete again to confirm")
 
 # -------------------------------------
-# TAB 2: TASKS & TASK LISTS
+# TAB 2: TASKS & TASK LISTS - UNIFIED IMPORT
 # -------------------------------------
 with tab2:
     st.header("📋 Task Lists & Tasks Management")
@@ -647,74 +644,49 @@ with tab2:
                 csv_t = df_tasks.to_csv(index=False).encode("utf-8")
                 st.download_button("⬇️ Download CSV", csv_t, f"project_{selected_project_id}_tasks.csv", "text/csv")
 
-        # UNIFIED IMPORT SECTION
+        # UNIFIED IMPORT SECTION - NEW IMPLEMENTATION
         st.markdown("---")
-        st.subheader("📥 Import Task Lists & Tasks")
+        st.subheader("📥 Unified Import: Task Lists & Tasks from One File")
         
-        st.info("💡 **Import both Task Lists and Tasks in one go!** Upload separate CSV/JSON files for each type.")
+        st.info("💡 **Upload a single CSV file containing both task lists and tasks!** The file should have a 'type' column with values 'tasklist' or 'task', and tasks should reference their parent task list via 'task_list_name' column.")
         
-        col_upload1, col_upload2 = st.columns(2)
+        uploaded_unified_file = st.file_uploader(
+            "Upload Unified CSV/JSON", 
+            type=["csv", "json"], 
+            key=f"upload_unified_{selected_project_id}",
+            help="File containing both task lists and tasks with a 'type' column to differentiate"
+        )
         
-        with col_upload1:
-            st.markdown("**Task Lists File**")
-            uploaded_task_lists = st.file_uploader(
-                "Upload Task Lists CSV/JSON", 
-                type=["csv", "json"], 
-                key=f"upload_task_lists_{selected_project_id}",
-                help="File containing task lists data"
-            )
-        
-        with col_upload2:
-            st.markdown("**Tasks File**")
-            uploaded_tasks = st.file_uploader(
-                "Upload Tasks CSV/JSON", 
-                type=["csv", "json"], 
-                key=f"upload_tasks_{selected_project_id}",
-                help="File containing tasks data"
-            )
-        
-        # Parse both files
-        task_lists_import_data = None
-        tasks_import_data = None
-        
-        if uploaded_task_lists:
-            file_ext = uploaded_task_lists.name.split(".")[-1].lower()
+        if uploaded_unified_file:
+            file_ext = uploaded_unified_file.name.split(".")[-1].lower()
+            
             if file_ext == "json":
-                task_lists_import_data = json.load(uploaded_task_lists)
-                if isinstance(task_lists_import_data, dict):
-                    task_lists_import_data = [task_lists_import_data]
+                unified_import_data = json.load(uploaded_unified_file)
+                if isinstance(unified_import_data, dict):
+                    unified_import_data = [unified_import_data]
             else:
-                df_tl = pd.read_csv(uploaded_task_lists)
-                task_lists_import_data = df_tl.to_dict('records')
-        
-        if uploaded_tasks:
-            file_ext = uploaded_tasks.name.split(".")[-1].lower()
-            if file_ext == "json":
-                tasks_import_data = json.load(uploaded_tasks)
-                if isinstance(tasks_import_data, dict):
-                    tasks_import_data = [tasks_import_data]
-            else:
-                df_t = pd.read_csv(uploaded_tasks)
-                tasks_import_data = df_t.to_dict('records')
-        
-        # Show previews
-        if task_lists_import_data:
-            with st.expander(f"📝 Task Lists Preview ({len(task_lists_import_data)} items)"):
-                st.dataframe(pd.DataFrame(task_lists_import_data).head(10), use_container_width=True)
-        
-        if tasks_import_data:
-            with st.expander(f"✅ Tasks Preview ({len(tasks_import_data)} items)"):
-                st.dataframe(pd.DataFrame(tasks_import_data).head(10), use_container_width=True)
-        
-        # Import Configuration
-        if task_lists_import_data or tasks_import_data:
+                df_unified = pd.read_csv(uploaded_unified_file)
+                unified_import_data = df_unified.to_dict('records')
+            
+            st.write(f"**Preview** ({len(unified_import_data)} items):")
+            st.dataframe(pd.DataFrame(unified_import_data).head(10), use_container_width=True)
+            
+            # Separate task lists and tasks
+            task_lists_data = [item for item in unified_import_data if str(item.get('type', '')).lower() == 'tasklist']
+            tasks_data = [item for item in unified_import_data if str(item.get('type', '')).lower() == 'task']
+            
+            col1, col2 = st.columns(2)
+            col1.metric("📝 Task Lists Found", len(task_lists_data))
+            col2.metric("✅ Tasks Found", len(tasks_data))
+            
+            # Import Configuration
             st.markdown("---")
             st.markdown("### ⚙️ Import Configuration")
             
-            col_config1, col_config2, col_config3 = st.columns(3)
+            col_config1, col_config2 = st.columns(2)
             
             with col_config1:
-                import_mode = st.radio(
+                unified_import_mode = st.radio(
                     "Import Mode",
                     ["Create New Only", "Update Existing Only", "Smart (Create + Update)"],
                     key=f"unified_import_mode_{selected_project_id}",
@@ -722,66 +694,19 @@ with tab2:
                 )
             
             with col_config2:
-                test_import = st.checkbox(
-                    "Test Mode (first item only)",
+                unified_test_import = st.checkbox(
+                    "Test Mode (first item of each type)",
                     value=True,
                     key=f"unified_test_import_{selected_project_id}",
                     help="Test with first item of each type before full import"
                 )
             
-            with col_config3:
-                force_project_id = st.checkbox(
-                    "Force Current Project ID",
-                    value=True,
-                    key=f"unified_force_project_{selected_project_id}",
-                    help="Override project_id in data with currently selected project"
-                )
-            
-            # Field selection for Task Lists
-            if task_lists_import_data:
-                with st.expander("📝 Task Lists Field Selection"):
-                    tl_available_fields = list(task_lists_import_data[0].keys()) if task_lists_import_data else []
-                    tl_default_fields = ["title", "description", "order", "milestone_id", "project_id"]
-                    
-                    selected_tl_fields = st.multiselect(
-                        "Task Lists fields to include:",
-                        options=tl_available_fields,
-                        default=[f for f in tl_default_fields if f in tl_available_fields],
-                        key=f"tl_fields_{selected_project_id}"
-                    )
-                    
-                    skip_empty_tl = st.checkbox("Skip empty/null values", value=True, key=f"skip_empty_tl_{selected_project_id}")
-                    
-                    if import_mode != "Create New Only" and 'id' in tl_available_fields:
-                        st.info("💡 ID field will identify task lists for updates")
-            else:
-                selected_tl_fields = []
-                skip_empty_tl = True
-            
-            # Field selection for Tasks
-            if tasks_import_data:
-                with st.expander("✅ Tasks Field Selection"):
-                    t_available_fields = list(tasks_import_data[0].keys()) if tasks_import_data else []
-                    t_default_fields = ["title", "description", "start_at", "due_date", "complexity", "priority", "status", "project_id", "parent_id", "task_list_id", "assignees"]
-                    
-                    selected_t_fields = st.multiselect(
-                        "Tasks fields to include:",
-                        options=t_available_fields,
-                        default=[f for f in t_default_fields if f in t_available_fields],
-                        key=f"t_fields_{selected_project_id}"
-                    )
-                    
-                    skip_empty_t = st.checkbox("Skip empty/null values", value=True, key=f"skip_empty_t_{selected_project_id}")
-                    
-                    if import_mode != "Create New Only" and 'id' in t_available_fields:
-                        st.info("💡 ID field will identify tasks for updates")
-            else:
-                selected_t_fields = []
-                skip_empty_t = True
-            
             # IMPORT BUTTON
             st.markdown("---")
-            if st.button("🚀 Start Import Process", use_container_width=True, type="primary", key=f"unified_import_btn_{selected_project_id}"):
+            if st.button("🚀 Start Unified Import", use_container_width=True, type="primary", key=f"unified_import_btn_{selected_project_id}"):
+                
+                # Dictionary to map task list names to their created IDs
+                task_list_name_to_id = {}
                 
                 total_tl_created = 0
                 total_tl_updated = 0
@@ -794,10 +719,10 @@ with tab2:
                 total_t_skipped = 0
                 
                 # PHASE 1: Import Task Lists
-                if task_lists_import_data:
+                if task_lists_data:
                     st.markdown("### 📝 Phase 1: Importing Task Lists")
                     
-                    tl_items = task_lists_import_data[:1] if test_import else task_lists_import_data
+                    tl_items = task_lists_data[:1] if unified_test_import else task_lists_data
                     progress_tl = st.progress(0)
                     status_tl = st.empty()
                     
@@ -805,13 +730,14 @@ with tab2:
                         status_tl.text(f"Processing Task List {idx + 1}/{len(tl_items)}...")
                         
                         item_id = item.get('id') or item.get('ID')
+                        task_list_name = item.get('title', '')
                         
                         should_create = False
                         should_update = False
                         
-                        if import_mode == "Create New Only":
+                        if unified_import_mode == "Create New Only":
                             should_create = True
-                        elif import_mode == "Update Existing Only":
+                        elif unified_import_mode == "Update Existing Only":
                             if item_id:
                                 should_update = True
                             else:
@@ -821,17 +747,27 @@ with tab2:
                             should_update = bool(item_id)
                             should_create = not bool(item_id)
                         
-                        payload = clean_payload(item, selected_tl_fields, skip_empty_tl)
+                        # Build payload for task list
+                        payload = {
+                            'title': item.get('title', ''),
+                            'description': item.get('description', ''),
+                            'project_id': selected_project_id
+                        }
                         
-                        if force_project_id:
-                            payload['project_id'] = selected_project_id
+                        # Add optional fields
+                        if 'order' in item and item['order']:
+                            payload['order'] = item['order']
+                        if 'status' in item and item['status']:
+                            payload['status'] = item['status']
+                        if 'milestone_id' in item and item['milestone_id']:
+                            payload['milestone_id'] = item['milestone_id']
                         
-                        if 'title' not in payload or not payload.get('title'):
+                        if not payload.get('title'):
                             st.warning(f"Task List {idx + 1}: Skipping - missing 'title'")
                             total_tl_failed += 1
                             continue
                         
-                        if test_import:
+                        if unified_test_import:
                             st.write(f"**Task List {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
                             if should_update:
                                 st.write(f"**Target ID:** {item_id}")
@@ -842,7 +778,8 @@ with tab2:
                             res = wp_put_json(endpoint, payload)
                             if res:
                                 total_tl_updated += 1
-                                if test_import:
+                                task_list_name_to_id[task_list_name] = item_id
+                                if unified_test_import:
                                     st.success(f"✅ Updated Task List ID {item_id}")
                                     st.json(res)
                             else:
@@ -853,22 +790,23 @@ with tab2:
                             res = wp_post_json(endpoint, payload)
                             if res:
                                 total_tl_created += 1
-                                if test_import:
-                                    st.success(f"✅ Created Task List! New ID: {res.get('id')}")
+                                new_id = res.get('id')
+                                task_list_name_to_id[task_list_name] = new_id
+                                if unified_test_import:
+                                    st.success(f"✅ Created Task List! New ID: {new_id}")
                                     st.json(res)
                             else:
                                 total_tl_failed += 1
                         
                         progress_tl.progress((idx + 1) / len(tl_items))
                         
-                        if not test_import:
-                            time.sleep(0.15)
+                        if not unified_test_import:
+                            time.sleep(0.2)
                     
                     progress_tl.empty()
                     status_tl.empty()
                     
-                    # Task Lists Summary
-                    st.markdown("#### 📊 Task Lists Import Summary")
+                    st.markdown("#### Task Lists Import Summary")
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("✅ Created", total_tl_created)
                     col2.metric("🔄 Updated", total_tl_updated)
@@ -876,11 +814,11 @@ with tab2:
                     col4.metric("❌ Failed", total_tl_failed)
                 
                 # PHASE 2: Import Tasks
-                if tasks_import_data:
+                if tasks_data:
                     st.markdown("---")
                     st.markdown("### ✅ Phase 2: Importing Tasks")
                     
-                    t_items = tasks_import_data[:1] if test_import else tasks_import_data
+                    t_items = tasks_data[:1] if unified_test_import else tasks_data
                     progress_t = st.progress(0)
                     status_t = st.empty()
                     
@@ -888,13 +826,14 @@ with tab2:
                         status_t.text(f"Processing Task {idx + 1}/{len(t_items)}...")
                         
                         item_id = item.get('id') or item.get('ID')
+                        task_list_name = item.get('task_list_name', '')
                         
                         should_create = False
                         should_update = False
                         
-                        if import_mode == "Create New Only":
+                        if unified_import_mode == "Create New Only":
                             should_create = True
-                        elif import_mode == "Update Existing Only":
+                        elif unified_import_mode == "Update Existing Only":
                             if item_id:
                                 should_update = True
                             else:
@@ -904,17 +843,31 @@ with tab2:
                             should_update = bool(item_id)
                             should_create = not bool(item_id)
                         
-                        payload = clean_payload(item, selected_t_fields, skip_empty_t)
+                        # Build payload for task
+                        payload = {
+                            'title': item.get('title', ''),
+                            'description': item.get('description', ''),
+                            'project_id': selected_project_id
+                        }
                         
-                        if force_project_id:
-                            payload['project_id'] = selected_project_id
+                        # Map task_list_name to task_list_id
+                        if task_list_name and task_list_name in task_list_name_to_id:
+                            payload['task_list_id'] = task_list_name_to_id[task_list_name]
+                        elif 'task_list_id' in item and item['task_list_id']:
+                            payload['task_list_id'] = item['task_list_id']
                         
-                        if 'title' not in payload or not payload.get('title'):
+                        # Add optional fields
+                        optional_fields = ['start_at', 'due_date', 'complexity', 'priority', 'status', 'parent_id', 'order', 'payable', 'recurrent', 'estimation']
+                        for field in optional_fields:
+                            if field in item and item[field] not in [None, '', 'None']:
+                                payload[field] = item[field]
+                        
+                        if not payload.get('title'):
                             st.warning(f"Task {idx + 1}: Skipping - missing 'title'")
                             total_t_failed += 1
                             continue
                         
-                        if test_import:
+                        if unified_test_import:
                             st.write(f"**Task {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
                             if should_update:
                                 st.write(f"**Target ID:** {item_id}")
@@ -925,7 +878,7 @@ with tab2:
                             res = wp_put_json(endpoint, payload)
                             if res:
                                 total_t_updated += 1
-                                if test_import:
+                                if unified_test_import:
                                     st.success(f"✅ Updated Task ID {item_id}")
                                     st.json(res)
                             else:
@@ -936,7 +889,7 @@ with tab2:
                             res = wp_post_json(endpoint, payload)
                             if res:
                                 total_t_created += 1
-                                if test_import:
+                                if unified_test_import:
                                     st.success(f"✅ Created Task! New ID: {res.get('id')}")
                                     st.json(res)
                             else:
@@ -944,49 +897,31 @@ with tab2:
                         
                         progress_t.progress((idx + 1) / len(t_items))
                         
-                        if not test_import:
-                            time.sleep(0.15)
+                        if not unified_test_import:
+                            time.sleep(0.2)
                     
                     progress_t.empty()
                     status_t.empty()
                     
-                    # Tasks Summary
-                    st.markdown("#### 📊 Tasks Import Summary")
+                    st.markdown("#### Tasks Import Summary")
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("✅ Created", total_t_created)
                     col2.metric("🔄 Updated", total_t_updated)
                     col3.metric("⏭️ Skipped", total_t_skipped)
                     col4.metric("❌ Failed", total_t_failed)
                 
-                # OVERALL SUMMARY
+                # Final Summary
                 st.markdown("---")
-                st.markdown("### 🎯 Overall Import Summary")
+                st.markdown("### 🎉 Overall Import Summary")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("📝 Task Lists Created", total_tl_created)
+                col2.metric("📝 Task Lists Updated", total_tl_updated)
+                col3.metric("✅ Tasks Created", total_t_created)
+                col4.metric("✅ Tasks Updated", total_t_updated)
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Task Lists:**")
-                    st.write(f"✅ Created: {total_tl_created}")
-                    st.write(f"🔄 Updated: {total_tl_updated}")
-                    st.write(f"⏭️ Skipped: {total_tl_skipped}")
-                    st.write(f"❌ Failed: {total_tl_failed}")
-                
-                with col2:
-                    st.markdown("**Tasks:**")
-                    st.write(f"✅ Created: {total_t_created}")
-                    st.write(f"🔄 Updated: {total_t_updated}")
-                    st.write(f"⏭️ Skipped: {total_t_skipped}")
-                    st.write(f"❌ Failed: {total_t_failed}")
-                
-                # Auto-refresh offer
-                if not test_import and (total_tl_created + total_tl_updated + total_t_created + total_t_updated > 0):
-                    st.markdown("---")
-                    if st.button("🔄 Refresh Task Data", use_container_width=True):
-                        with st.spinner("Refreshing data..."):
-                            task_lists = fetch_all_pages(f"{projects_url}/{selected_project_id}/task-lists")
-                            tasks = fetch_all_pages(f"{projects_url}/{selected_project_id}/tasks")
-                            st.session_state["current_task_lists"] = task_lists or []
-                            st.session_state["current_tasks"] = tasks or []
-                            st.rerun()
+                if not unified_test_import and (total_tl_created > 0 or total_tl_updated > 0 or total_t_created > 0 or total_t_updated > 0):
+                    if st.button("🔄 Refresh Data"):
+                        st.rerun()
 
         # Display detailed task lists
         if task_lists:
