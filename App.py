@@ -105,7 +105,7 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"POST failed: {error_data.get(\'message\', str(e))}")
+            st.error(f"POST failed: {error_data.get('message', str(e))}")
         except:
             st.error(f"POST failed: {e}\\n{res.text}")
         return None
