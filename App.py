@@ -405,6 +405,202 @@ with tab2:
                     st.warning("No tasks or task lists found for this project, or permission denied.")
                 else:
                     st.success(f"✅ Re-fetched {len(task_lists or [])} task lists and {len(tasks or [])} tasks for project {selected_project_id}.")
+
+        st.markdown("---")
+        st.subheader("⬇️ Export Task Data")
+        
+        if task_lists:
+            st.write("**Task Lists**")
+            df_task_lists = pd.DataFrame(task_lists)
+            st.dataframe(df_task_lists, use_container_width=True)
+            csv_task_lists = df_task_lists.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Task Lists CSV",
+                data=csv_task_lists,
+                file_name=f"project_{selected_project_id}_task_lists.csv",
+                mime="text/csv",
+                key=f"download_task_lists_csv_{selected_project_id}"
+            )
+        
+        if tasks:
+            st.write("**Tasks**")
+            df_tasks = pd.DataFrame(tasks)
+            st.dataframe(df_tasks, use_container_width=True)
+            csv_tasks = df_tasks.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Tasks CSV",
+                data=csv_tasks,
+                file_name=f"project_{selected_project_id}_tasks.csv",
+                mime="text/csv",
+                key=f"download_tasks_csv_{selected_project_id}"
+            )
+
+
+        st.markdown("---")
+        st.subheader("⬇️ Export Task Data")
+        
+        if task_lists:
+            st.write("**Task Lists**")
+            df_task_lists = pd.DataFrame(task_lists)
+            st.dataframe(df_task_lists, use_container_width=True)
+            csv_task_lists = df_task_lists.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Task Lists CSV",
+                data=csv_task_lists,
+                file_name=f"project_{selected_project_id}_task_lists.csv",
+                mime="text/csv",
+                key=f"download_task_lists_csv_{selected_project_id}"
+            )
+        
+        if tasks:
+            st.write("**Tasks**")
+            df_tasks = pd.DataFrame(tasks)
+            st.dataframe(df_tasks, use_container_width=True)
+            csv_tasks = df_tasks.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Tasks CSV",
+                data=csv_tasks,
+                file_name=f"project_{selected_project_id}_tasks.csv",
+                mime="text/csv",
+                key=f"download_tasks_csv_{selected_project_id}"
+            )
+
+        st.markdown("---")
+        st.subheader("⬆️ Import Task Data")
+        uploaded_file = st.file_uploader("Upload CSV file for Task Lists or Tasks", type=["csv"], key=f"upload_task_data_{selected_project_id}")
+        if uploaded_file is not None:
+            import_type = st.radio("Import as:", ["Task Lists", "Tasks"], key=f"import_type_{selected_project_id}")
+            override_existing = st.checkbox("Override existing data (based on ID match)", value=False, key=f"override_existing_{selected_project_id}")
+            
+            if st.button("⬆️ Process Upload", use_container_width=True, key=f"process_upload_btn_{selected_project_id}"):
+                df_import = pd.read_csv(uploaded_file)
+                st.write("Preview of uploaded data:")
+                st.dataframe(df_import)
+                
+                if import_type == "Task Lists":
+                    # Process Task Lists import
+                    st.info("Processing Task Lists import...")
+                    imported_count = 0
+                    for index, row in df_import.iterrows():
+                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
+                        payload = row.to_dict()
+                        
+                        if override_existing and item_id:
+                            # Check if item exists before attempting to update
+                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", silent_on_error=True)
+                            if existing_item:
+                                res = wp_put_json(f"{projects_url}/{selected_project_id}/task-lists/{item_id}", payload)
+                                if res: imported_count += 1
+                            else:
+                                st.warning(f"Task List with ID {item_id} not found for update. Creating new instead.")
+                                res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
+                                if res: imported_count += 1
+                        else:
+                            res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
+                            if res: imported_count += 1
+                        time.sleep(0.1) # Be kind to the API
+                    st.success(f"Successfully imported/updated {imported_count} Task Lists.")
+                elif import_type == "Tasks":
+                    # Process Tasks import
+                    st.info("Processing Tasks import...")
+                    imported_count = 0
+                    for index, row in df_import.iterrows():
+                        item_id = row.get("id") or row.get("ID") # Handle potential case differences
+                        payload = row.to_dict()
+                        
+                        if override_existing and item_id:
+                            # Check if item exists before attempting to update
+                            existing_item = wp_get_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", silent_on_error=True)
+                            if existing_item:
+                                res = wp_put_json(f"{projects_url}/{selected_project_id}/tasks/{item_id}", payload)
+                                if res: imported_count += 1
+                            else:
+                                st.warning(f"Task with ID {item_id} not found for update. Creating new instead.")
+                                res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
+                                if res: imported_count += 1
+                        else:
+                            res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
+                            if res: imported_count += 1
+                        time.sleep(0.1) # Be kind to the API
+                    st.success(f"Successfully imported/updated {imported_count} Tasks.")
+                
+                st.success("Import process completed. Please re-fetch data to see changes.")
+
+        # Display Task Lists
+        if task_lists:
+            st.subheader("📝 Task Lists")
+            for tl in task_lists:
+                if not isinstance(tl, dict):
+                    continue
+                tl_title = tl.get("title")
+                if isinstance(tl_title, dict):
+                    tl_title = tl_title.get("rendered", "")
+                
+                with st.expander(f"Task List: {tl_title} (ID: {tl.get("id")})"):
+                    st.json(tl)
+
+        # Display Tasks
+        if tasks:
+            st.subheader("✅ Tasks")
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                t_title = t.get("title")
+                if isinstance(t_title, dict):
+                    t_title = t_title.get("rendered", "")
+                
+                with st.expander(f"Task: {t_title} (ID: {t.get("id")})"):
+                    st.json(t)
+
+# -------------------------------------
+# TAB 3: CUSTOM POST TYPES
+# -------------------------------------
+with tab3:
+    st.header("🧱 Custom Post Types")
+    
+    # CPT selection
+    cpt_types = wp_get_json(f"{wp_base}/wp-json/wp/v2/types")
+    if cpt_types:
+        cpt_options = {cpt_types[t]["labels"]["singular_name"]: t for t in cpt_types if cpt_types[t]["rest_base"] and cpt_types[t]["_links"].get("wp:items")}
+        selected_cpt_label = st.selectbox("Select Custom Post Type", options=list(cpt_options.keys()))
+        selected_cpt_slug = cpt_options[selected_cpt_label]
+        
+        st.markdown("---")
+        st.subheader(f"Posts for {selected_cpt_label}")
+        
+        if st.button(f"🔄 Fetch All {selected_cpt_label} Posts", key="fetch_cpt_posts"):
+            with st.spinner(f"Fetching {selected_cpt_label} posts..."):
+                cpt_posts = fetch_all_pages(f"{posts_url}/{selected_cpt_slug}")
+                st.session_state["current_cpt_posts"] = cpt_posts
+                st.success(f"✅ Fetched {len(cpt_posts)} {selected_cpt_label} posts.")
+                if show_raw_json:
+                    with st.expander("Raw JSON Response"):
+                        st.json(cpt_posts)
+        
+        current_cpt_posts = st.session_state.get("current_cpt_posts", [])
+        if current_cpt_posts:
+            df_cpt = pd.DataFrame(current_cpt_posts)
+            st.dataframe(df_cpt, use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                download_json(current_cpt_posts, f"{selected_cpt_slug}.json", label=f"⬇️ Download {selected_cpt_label} JSON")
+            with col2:
+                csv_cpt = df_cpt.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label=f"⬇️ Download {selected_cpt_label} CSV",
+                    data=csv_cpt,
+                    file_name=f"{selected_cpt_slug}.csv",
+                    mime="text/csv"
+                )
+
+# -------------------------------------
+# TAB 4: DB EXPORT/IMPORT
+# -------------------------------------
+nd not tasks:
+                    st.warning("No tasks or task lists found for this project, or permission denied.")
+                else:
+                    st.success(f"✅ Re-fetched {len(task_lists or [])} task lists and {len(tasks or [])} tasks for project {selected_project_id}.")
         
         task_lists = st.session_state.get("current_task_lists", [])
         tasks = st.session_state.get("current_tasks", [])
@@ -575,4 +771,3 @@ with tab4:
 # -------------------------------------
 st.markdown("---")
 st.caption("🚀 Developed for WordPress REST API exploration — supports WP Project Manager and all custom post types. Handles App Password authentication safely.")
-
