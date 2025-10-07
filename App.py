@@ -80,6 +80,7 @@ def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool =
             except:
                 error_msg += f"\n{res.text}"
             st.error(error_msg)
+
         return None
     except Exception as e:
         if not silent_on_error:
@@ -995,6 +996,8 @@ with tab4:
 
         if db_connection:
             db_connection.close()
+
+
 
 
 
