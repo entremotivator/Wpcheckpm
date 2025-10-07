@@ -147,9 +147,9 @@ def extract_title(p: dict) -> str:
 def extract_meta_totals(project: dict) -> dict:
     """Extract meta totals from project data."""
     if isinstance(project, dict):
-        meta = project.get("meta", {})
+        meta = project.get("meta")
         if isinstance(meta, dict):
-            data = meta.get("data", {})
+            data = meta.get("data")
             if isinstance(data, dict):
                 return data
     return {}
@@ -170,20 +170,24 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
             break
             
         if isinstance(data, list):
-            items = [item for item in data if isinstance(item, dict)]
+            items = [item for item in data if isinstance(item, dict)] # Ensure only dicts are added
             all_items.extend(items)
-            if len(items) < 100:
+            if len(items) < params.get("per_page", 100): # Use params.get for per_page
                 break
         elif isinstance(data, dict):
+            # Some endpoints return a single object with a 'data' key, or just the object itself
             if "data" in data and isinstance(data["data"], list):
-                items = [item for item in data["data"] if isinstance(item, dict)]
+                items = [item for item in data["data"] if isinstance(item, dict)] # Ensure only dicts are added
                 all_items.extend(items)
-                if len(items) < 100:
+                # If the 'data' key contains a list, and its length is less than per_page, it's the last page
+                if len(items) < params.get("per_page", 100):
                     break
             elif "data" in data and isinstance(data["data"], dict):
                 all_items.append(data["data"])
                 break
             else:
+                # If it's a dictionary but not paginated or has a 'data' key, assume it's a single item
+                all_items.append(data)
                 break
         else:
             break
@@ -237,10 +241,10 @@ with tab1:
         
         for p in projects:
             meta = extract_meta_totals(p)
-            total_tasks += meta.get("total_tasks", 0)
-            total_complete += meta.get("total_complete_tasks", 0)
-            total_incomplete += meta.get("total_incomplete_tasks", 0)
-            total_files += meta.get("total_files", 0)
+            total_tasks += int(meta.get("total_tasks", 0))
+            total_complete += int(meta.get("total_complete_tasks", 0))
+            total_incomplete += int(meta.get("total_incomplete_tasks", 0))
+            total_files += int(meta.get("total_files", 0))
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Tasks", total_tasks)
@@ -468,18 +472,44 @@ with tab2:
         
         st.markdown("---")
         
-        if st.button("🔄 Fetch Task Lists & Tasks", use_container_width=True):
-            with st.spinner("Fetching task data..."):
-                task_lists = wp_get_json(f"{projects_url}/{selected_project_id}/task-lists")
-                tasks = wp_get_json(f"{projects_url}/{selected_project_id}/tasks")
+        # Function to fetch task lists and tasks, handling multiple endpoints
+        def fetch_project_tasks(project_id):
+            task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists", silent_on_error=True)
+            task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists", silent_on_error=True)
+            task_lists = (task_lists_1 or []) + (task_lists_2 or [])
+            
+            tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks", silent_on_error=True)
+            tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks", silent_on_error=True)
+            tasks = (tasks_1 or []) + (tasks_2 or [])
+            return task_lists, tasks
+
+        # Automatically fetch task lists and tasks when a project is selected or tab is accessed
+        if selected_project_id and (st.session_state.get("current_project_id") != selected_project_id or not st.session_state.get("current_task_lists") or not st.session_state.get("current_tasks")):
+            with st.spinner(f"Fetching task data for project {selected_project_id}..."):
+                task_lists, tasks = fetch_project_tasks(selected_project_id)
                 
-                if task_lists or tasks:
-                    st.session_state["current_task_lists"] = task_lists or []
-                    st.session_state["current_tasks"] = tasks or []
-                    st.session_state["current_project_id"] = selected_project_id
-                    st.success(f"✅ Fetched {len(task_lists or [])} task lists and {len(tasks or [])} tasks.")
+                st.session_state["current_task_lists"] = task_lists
+                st.session_state["current_tasks"] = tasks
+                st.session_state["current_project_id"] = selected_project_id
+                
+                if not task_lists and not tasks:
+                    st.warning("No tasks or task lists found for this project, or permission denied.")
                 else:
-                    st.warning("No tasks or task lists found, or permission denied.")
+                    st.success(f"✅ Fetched {len(task_lists)} task lists and {len(tasks)} tasks for project {selected_project_id}.")
+        
+        # Allow manual refetch
+        if st.button("🔄 Re-fetch Task Lists & Tasks", use_container_width=True):
+            with st.spinner(f"Re-fetching task data for project {selected_project_id}..."):
+                task_lists, tasks = fetch_project_tasks(selected_project_id)
+                
+                st.session_state["current_task_lists"] = task_lists
+                st.session_state["current_tasks"] = tasks
+                st.session_state["current_project_id"] = selected_project_id
+                
+                if not task_lists and not tasks:
+                    st.warning("No tasks or task lists found for this project, or permission denied.")
+                else:
+                    st.success(f"✅ Fetched {len(task_lists)} task lists and {len(tasks)} tasks for project {selected_project_id}.")
         
         task_lists = st.session_state.get("current_task_lists", [])
         tasks = st.session_state.get("current_tasks", [])
