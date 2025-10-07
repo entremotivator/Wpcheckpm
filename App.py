@@ -649,24 +649,27 @@ with tab2:
                                 
                                 # Create task list via API
                                 result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
-                                st.write("API Response for Task List Creation:")
+                                st.write(f"DEBUG: API Response for Task List Creation for \'{row[\'title\']}\':")
                                 st.json(result)
                                 if result and isinstance(result, dict):
-                                    tasklist_id = result.get('id')
-                                    if tasklist_id: 
-                                        tasklist_mapping[row['title']] = tasklist_id
+                                    tasklist_id = result.get("id")
+                                    if tasklist_id:
+                                        tasklist_mapping[row["title"]] = tasklist_id
                                         import_results["tasklists"].append({
-                                            "title": row['title'],
+                                            "title": row["title"],
                                             "id": tasklist_id,
                                             "status": "success"
                                         })
-                                        st.success(f"✅ Created task list: {row['title']} (ID: {tasklist_id})")
+                                        st.success(f"✅ Created task list: {row["title"]} (ID: {tasklist_id})")
+                                        st.write(f"DEBUG: tasklist_mapping updated: {tasklist_mapping}")
                                     else:
-                                        import_results["errors"].append(f"Failed to retrieve ID for task list: {row['title']}")
-                                        st.error(f"❌ Failed to retrieve ID for task list: {row['title']}")
+                                        import_results["errors"].append(f"Failed to retrieve ID for task list: {row["title"]}")
+                                        st.error(f"❌ Failed to retrieve ID for task list: {row["title"]}")
+                                        st.write(f"DEBUG: No ID found in API response for task list \'{row[\'title\']}\'. Full response: {result}")
                                 else:
-                                    import_results["errors"].append(f"Failed to create task list: {row['title']}")
-                                    st.error(f"❌ Failed to create task list: {row['title']}")
+                                    import_results["errors"].append(f"Failed to create task list: {row["title"]}")
+                                    st.error(f"❌ Failed to create task list: {row["title"]}")
+                                    st.write(f"DEBUG: API call for task list \'{row[\'title\']}\' returned no valid result.")
                                 
                                 progress_bar.progress((idx + 1) / len(tasklist_df))
                                 time.sleep(0.1)  # Rate limiting
@@ -694,12 +697,23 @@ with tab2:
                                 st.write(f"DEBUG: Current tasklist_mapping: {tasklist_mapping}")
                                 if task_list_name and task_list_name in tasklist_mapping:
                                     task_list_id = tasklist_mapping[task_list_name]
-                                    st.info(f"🔗 Linking task \'{row[\'title\]}\' to task list \'{task_list_name}\' (ID: {task_list_id})")
-                                else:
-                                    st.warning(f"DEBUG: Task list \'{task_list_name}\' not found in current session mapping.")                              
-                                # If not found in mapping, try to find existing task list by name
+                                    st.info(f"🔗 Linking task '{row['title']}' to task list '{task_list_name}' (ID: {task_list_id})")
+                                else: # If not found in mapping, try to find existing task list by name
                                 if not task_list_id and task_list_name:
                                     existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
+                                    for tl in existing_tasklists:
+                                        if str(tl.get(\'title\', \'\')).strip() == task_list_name:
+                                            task_list_id = tl.get(\'id\')
+                                            st.info(f"🔗 Found existing task list \'{task_list_name}\' (ID: {task_list_id}) for task \'{row[\'title\]}\'")
+                                            break
+                                
+                                # If still no task list found, warn                                    task_list_id = tasklist_mapping[task_list_name]
+                                    st.info(f"🔗 Linking task '{row['title']}' to task list '{task_list_name}' (ID: {task_list_id})")
+                                else:
+                                    st.warning(f"DEBUG: Task list \'{task_list_name}\' not found in current session mapping.")
+                                
+                                # If not found in mapping, try to find existing task list by name
+                                if not task_list_id and task_list_name:                                     existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
                                     for tl in existing_tasklists:
                                         if str(tl.get('title', '')).strip() == task_list_name:
                                             task_list_id = tl.get('id')
@@ -707,9 +721,7 @@ with tab2:
                                             break
                                 
                                 # If still no task list found, warn but continue
-                                if not task_list_id and task_list_name:
-                                    st.warning(f"⚠️ Task list '{task_list_name}' not found for task '{row['title']}'. Task will be created without a task list.")
-                                
+                                if not task_list_id and task_list_na                                    st.warning(f"⚠️ Task list \'{task_list_name}\' not found for task \'{row['title']}\'\. Task will be created without a task list.")                                
                                 task_payload = {
                                     "title": str(row["title"]) if pd.notna(row.get("title")) else "",
                                     "description": str(row.get("description", "")) if pd.notna(row.get("description")) else "",
