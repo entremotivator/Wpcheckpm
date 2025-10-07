@@ -1,4 +1,3 @@
-
 """
 Streamlit App: WP Project Manager + Custom Post Types - Enhanced Version
 -------------------------------------------------------------------------
@@ -110,10 +109,10 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         try:
             error_data = res.json()
             if isinstance(error_data, dict):
-                error_msg += f": {error_data.get(\'message\', str(e))}"
+                error_msg += f": {error_data.get('message', str(e))}"
             st.error(error_msg)
         except:
-            if \'text/html\' in res.headers.get(\'content-type\', \'\'):
+            if 'text/html' in res.headers.get('content-type', ''):
                 st.error(f"{error_msg}: WordPress returned an HTML error page (likely a PHP fatal error)")
                 with st.expander("View Error Details"):
                     st.code(res.text[:1000])
@@ -133,7 +132,7 @@ def wp_put_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"PUT failed: {error_data.get(\'message\', str(e))}")
+            st.error(f"PUT failed: {error_data.get('message', str(e))}")
         except:
             st.error(f"PUT failed: {e}\n{res.text}")
         return None
@@ -207,7 +206,7 @@ def clean_payload(item: dict, selected_fields: List[str], skip_empty: bool = Tru
     
     for k, v in item.items():
         # Skip ID field if requested
-        if exclude_id and k.lower() in [\'id\']:
+        if exclude_id and k.lower() in ['id']:
             continue
         
         # Only include selected fields
@@ -224,7 +223,7 @@ def clean_payload(item: dict, selected_fields: List[str], skip_empty: bool = Tru
                 continue
         
         # Convert numpy types to Python types
-        if hasattr(v, \'item\'):
+        if hasattr(v, 'item'):
             v = v.item()
         
         payload[k] = v
@@ -391,7 +390,7 @@ with tab1:
                 with st.spinner("Creating project..."):
                     res = wp_post_json(projects_url, payload)
                     if res:
-                        st.success(f"✅ Project created successfully! ID: {res.get(\'id\')}")
+                        st.success(f"✅ Project created successfully! ID: {res.get('id')}")
                         if show_raw_json:
                             st.json(res)
                         time.sleep(1)
@@ -405,7 +404,7 @@ with tab1:
         "Upload Projects CSV/JSON", 
         type=["csv", "json"], 
         key="upload_projects_bulk",
-        help="Upload a file with project data. Include \'id\' column for updates."
+        help="Upload a file with project data. Include 'id' column for updates."
     )
     
     if uploaded_projects_file:
@@ -417,7 +416,7 @@ with tab1:
                 projects_import_data = [projects_import_data]
         else:
             df_projects_import = pd.read_csv(uploaded_projects_file)
-            projects_import_data = df_projects_import.to_dict(\'records\')
+            projects_import_data = df_projects_import.to_dict('records')
         
         st.write(f"**Preview** ({len(projects_import_data)} items):")
         st.dataframe(pd.DataFrame(projects_import_data).head(10), use_container_width=True)
@@ -441,11 +440,6 @@ with tab1:
                 options=available_fields,
                 default=[f for f in default_project_fields if f in available_fields]
             )
-            
-            force_project_id = st.checkbox("Force Project ID (for tasks/tasklists)", value=False, help="If checked, all imported tasks/tasklists will be assigned to the currently selected project.")
-            
-            if force_project_id:
-                st.warning("⚠️ This will override any project_id in your CSV for tasks/tasklists.")
 
         import_projects_btn = st.button("🚀 Start Project Import", type="primary", use_container_width=True)
         
@@ -466,21 +460,24 @@ with tab1:
                         
                         if import_mode == "Create New Only" or (import_mode == "Smart (Create + Update)" and not item_id):
                             # Create new project
-                            if "id" in payload: del payload["id"]
+                            if "id" in payload: 
+                                del payload["id"]
                             res = wp_post_json(projects_url, payload)
-                            if res: success_count += 1
+                            if res: 
+                                success_count += 1
                         elif import_mode == "Update Existing Only" or (import_mode == "Smart (Create + Update)" and item_id):
                             # Update existing project
                             if item_id:
                                 res = wp_put_json(f"{projects_url}/{item_id}", payload)
-                                if res: success_count += 1
+                                if res: 
+                                    success_count += 1
                             else:
-                                st.warning(f"Skipping item {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                                st.warning(f"Skipping item {idx+1}: No ID found for update in '{item.get('title', 'N/A')}'.")
                         
-                        time.sleep(0.1) # Be nice to the API
+                        time.sleep(0.1)  # Be nice to the API
                     
                     st.success(f"✅ Successfully imported/updated {success_count} projects.")
-                    st.session_state["projects"] = [] # Clear cache to refetch
+                    st.session_state["projects"] = []  # Clear cache to refetch
                     st.rerun()
 
 # -------------------------------------
@@ -519,7 +516,7 @@ with tab2:
                 st.session_state[f"task_lists_{selected_project_id}"] = fetched_task_lists if isinstance(fetched_task_lists, list) else []
                 st.session_state[f"tasks_{selected_project_id}"] = fetched_tasks if isinstance(fetched_tasks, list) else []
                 
-                st.success(f"✅ Fetched {len(st.session_state[f\"task_lists_{selected_project_id}\"])} task lists and {len(st.session_state[f\"tasks_{selected_project_id}\"])} tasks.")
+                st.success(f"✅ Fetched {len(st.session_state[f'task_lists_{selected_project_id}'])} task lists and {len(st.session_state[f'tasks_{selected_project_id}'])} tasks.")
                 if show_raw_json:
                     with st.expander("Raw Task Lists JSON"):
                         st.json(fetched_task_lists)
@@ -532,7 +529,8 @@ with tab2:
             st.subheader("📝 Task Lists")
             tl_rows = []
             for tl in task_lists:
-                if not isinstance(tl, dict): continue
+                if not isinstance(tl, dict): 
+                    continue
                 tl_rows.append({
                     "ID": tl.get("id"),
                     "Title": extract_title(tl),
@@ -548,7 +546,8 @@ with tab2:
             st.subheader("✅ Tasks")
             task_rows = []
             for task in tasks:
-                if not isinstance(task, dict): continue
+                if not isinstance(task, dict): 
+                    continue
                 task_rows.append({
                     "ID": task.get("id"),
                     "Title": extract_title(task),
@@ -578,7 +577,7 @@ with tab2:
                     with st.spinner("Creating task list..."):
                         res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
                         if res:
-                            st.success(f"✅ Task List created successfully! ID: {res.get(\'id\')}")
+                            st.success(f"✅ Task List created successfully! ID: {res.get('id')}")
                             if show_raw_json:
                                 st.json(res)
                             time.sleep(1)
@@ -593,7 +592,8 @@ with tab2:
                 options=list(task_lists_for_dropdown.keys()),
                 format_func=lambda x: task_lists_for_dropdown[x],
                 key="task_list_select"
-            )
+            ) if task_lists_for_dropdown else None
+            
             new_task_title = st.text_input("Task Title *", placeholder="Enter task name")
             new_task_desc = st.text_area("Description", placeholder="Task description (optional)")
             new_task_due_date = st.date_input("Due Date", value=None)
@@ -609,7 +609,7 @@ with tab2:
                         "title": new_task_title.strip(),
                         "description": new_task_desc,
                         "task_list_id": selected_task_list_id,
-                        "project_id": selected_project_id # Ensure project_id is sent
+                        "project_id": selected_project_id
                     }
                     if new_task_due_date:
                         payload["due_date"] = str(new_task_due_date)
@@ -617,7 +617,7 @@ with tab2:
                     with st.spinner("Creating task..."):
                         res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
                         if res:
-                            st.success(f"✅ Task created successfully! ID: {res.get(\'id\')}")
+                            st.success(f"✅ Task created successfully! ID: {res.get('id')}")
                             if show_raw_json:
                                 st.json(res)
                             time.sleep(1)
@@ -635,7 +635,7 @@ with tab2:
         
         if uploaded_unified_file:
             df_unified_import = pd.read_csv(uploaded_unified_file)
-            unified_import_data = df_unified_import.to_dict(\'records\')
+            unified_import_data = df_unified_import.to_dict('records')
             
             st.write(f"**Preview** ({len(unified_import_data)} items):")
             st.dataframe(pd.DataFrame(unified_import_data).head(10), use_container_width=True)
@@ -682,19 +682,19 @@ with tab2:
                             
                             item_type = item.get("type")
                             if not item_type:
-                                st.warning(f"Skipping item {idx+1}: No 'type' specified. Item: {item.get(\'title\', \'N/A\')}")
+                                st.warning(f"Skipping item {idx+1}: No 'type' specified. Item: {item.get('title', 'N/A')}")
                                 continue
                             
-                            payload = clean_payload(item, [], exclude_id=False) # Clean all fields
+                            payload = clean_payload(item, [], exclude_id=False)
                             
-                            # Ensure description is a string, handling NaN values
+                            # Ensure description is a string
                             if 'description' in payload:
                                 if pd.isna(payload['description']):
                                     payload['description'] = ''
                                 else:
                                     payload['description'] = str(payload['description'])
 
-                            # Handle date fields (start_at, due_date) - ensure they are strings or empty strings
+                            # Handle date fields
                             for date_field in ['start_at', 'due_date']:
                                 if date_field in payload:
                                     if pd.isna(payload[date_field]) or payload[date_field] is None:
@@ -702,30 +702,31 @@ with tab2:
                                     else:
                                         payload[date_field] = str(payload[date_field])
                                 else:
-                                    payload[date_field] = '' # Ensure field exists even if not in CSV
+                                    payload[date_field] = ''
 
                             # Force project_id if checked
                             if force_current_project_id and selected_project_id:
                                 payload["project_id"] = selected_project_id
                             elif "project_id" not in payload or pd.isna(payload["project_id"]):
-                                # If not forced and not present, assign to selected project as fallback
                                 payload["project_id"] = selected_project_id
 
                             item_id = payload.get("id")
                             
                             if item_type == "tasklist":
                                 if unified_import_mode == "Create New Only" or (unified_import_mode == "Smart (Create + Update)" and not item_id):
-                                    if "id" in payload: del payload["id"]
-                                    res = wp_post_json(f"{projects_url}/{payload[\'project_id\']}/task-lists", payload)
+                                    if "id" in payload: 
+                                        del payload["id"]
+                                    res = wp_post_json(f"{projects_url}/{payload['project_id']}/task-lists", payload)
                                     if res:
                                         task_list_success += 1
-                                        task_list_id_map[extract_title(res)] = res["id"] # Update map for new task lists
+                                        task_list_id_map[extract_title(res)] = res["id"]
                                 elif unified_import_mode == "Update Existing Only" or (unified_import_mode == "Smart (Create + Update)" and item_id):
                                     if item_id:
-                                        res = wp_put_json(f"{projects_url}/{payload[\'project_id\']}/task-lists/{item_id}", payload)
-                                        if res: task_list_success += 1
+                                        res = wp_put_json(f"{projects_url}/{payload['project_id']}/task-lists/{item_id}", payload)
+                                        if res: 
+                                            task_list_success += 1
                                     else:
-                                        st.warning(f"Skipping task list {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                                        st.warning(f"Skipping task list {idx+1}: No ID found for update in '{item.get('title', 'N/A')}'.")
                             
                             elif item_type == "task":
                                 # Assign task to task list
@@ -733,28 +734,31 @@ with tab2:
                                 if task_list_name and task_list_name in task_list_id_map:
                                     payload["task_list_id"] = task_list_id_map[task_list_name]
                                 elif task_list_name:
-                                    st.warning(f"Task \'{item.get(\'title\', \'N/A\')}\' refers to unknown task list \'{task_list_name}\'. Skipping.")
+                                    st.warning(f"Task '{item.get('title', 'N/A')}' refers to unknown task list '{task_list_name}'. Skipping.")
                                     continue
                                 else:
-                                    st.warning(f"Task \'{item.get(\'title\', \'N/A\')}\' has no \'task_list_name\'. Skipping.")
+                                    st.warning(f"Task '{item.get('title', 'N/A')}' has no 'task_list_name'. Skipping.")
                                     continue
 
                                 if unified_import_mode == "Create New Only" or (unified_import_mode == "Smart (Create + Update)" and not item_id):
-                                    if "id" in payload: del payload["id"]
-                                    res = wp_post_json(f"{projects_url}/{payload[\'project_id\']}/tasks", payload)
-                                    if res: task_success += 1
+                                    if "id" in payload: 
+                                        del payload["id"]
+                                    res = wp_post_json(f"{projects_url}/{payload['project_id']}/tasks", payload)
+                                    if res: 
+                                        task_success += 1
                                 elif unified_import_mode == "Update Existing Only" or (unified_import_mode == "Smart (Create + Update)" and item_id):
                                     if item_id:
-                                        res = wp_put_json(f"{projects_url}/{payload[\'project_id\']}/tasks/{item_id}", payload)
-                                        if res: task_success += 1
+                                        res = wp_put_json(f"{projects_url}/{payload['project_id']}/tasks/{item_id}", payload)
+                                        if res: 
+                                            task_success += 1
                                     else:
-                                        st.warning(f"Skipping task {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                                        st.warning(f"Skipping task {idx+1}: No ID found for update in '{item.get('title', 'N/A')}'.")
                             
-                            time.sleep(0.1) # Be nice to the API
+                            time.sleep(0.1)
                         
                         st.success(f"✅ Successfully imported {task_list_success} task lists and {task_success} tasks.")
-                        st.session_state[f"task_lists_{selected_project_id}"] = [] # Clear cache to refetch
-                        st.session_state[f"tasks_{selected_project_id}"] = [] # Clear cache to refetch
+                        st.session_state[f"task_lists_{selected_project_id}"] = []
+                        st.session_state[f"tasks_{selected_project_id}"] = []
                         st.rerun()
 
 # -------------------------------------
@@ -793,7 +797,8 @@ with tab3:
         
         cpt_rows = []
         for p in cpts:
-            if not isinstance(p, dict): continue
+            if not isinstance(p, dict): 
+                continue
             desc = p.get("content") or ""
             if isinstance(desc, dict):
                 desc = desc.get("rendered", "")
@@ -846,7 +851,7 @@ with tab3:
                 with st.spinner(f"Creating {cpt_type}..."):
                     res = wp_post_json(cpt_url, payload)
                     if res:
-                        st.success(f"✅ {cpt_type.title()} created successfully! ID: {res.get(\'id\')}")
+                        st.success(f"✅ {cpt_type.title()} created successfully! ID: {res.get('id')}")
                         if show_raw_json:
                             st.json(res)
                         time.sleep(1)
@@ -860,7 +865,7 @@ with tab3:
         f"Upload {cpt_type.title()}s CSV/JSON", 
         type=["csv", "json"], 
         key=f"upload_cpt_bulk_{cpt_type}",
-        help="Upload a file with CPT data. Include \'id\' column for updates."
+        help="Upload a file with CPT data. Include 'id' column for updates."
     )
     
     if uploaded_cpt_file:
@@ -872,7 +877,7 @@ with tab3:
                 cpt_import_data = [cpt_import_data]
         else:
             df_cpt_import = pd.read_csv(uploaded_cpt_file)
-            cpt_import_data = df_cpt_import.to_dict(\'records\')
+            cpt_import_data = df_cpt_import.to_dict('records')
         
         st.write(f"**Preview** ({len(cpt_import_data)} items):")
         st.dataframe(pd.DataFrame(cpt_import_data).head(10), use_container_width=True)
@@ -916,20 +921,23 @@ with tab3:
                         item_id = payload.get("id")
                         
                         if cpt_import_mode == "Create New Only" or (cpt_import_mode == "Smart (Create + Update)" and not item_id):
-                            if "id" in payload: del payload["id"]
+                            if "id" in payload: 
+                                del payload["id"]
                             res = wp_post_json(cpt_url, payload)
-                            if res: success_count += 1
+                            if res: 
+                                success_count += 1
                         elif cpt_import_mode == "Update Existing Only" or (cpt_import_mode == "Smart (Create + Update)" and item_id):
                             if item_id:
                                 res = wp_put_json(f"{cpt_url}/{item_id}", payload)
-                                if res: success_count += 1
+                                if res: 
+                                    success_count += 1
                             else:
-                                st.warning(f"Skipping item {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                                st.warning(f"Skipping item {idx+1}: No ID found for update in '{item.get('title', 'N/A')}'.")
                         
-                        time.sleep(0.1) # Be nice to the API
+                        time.sleep(0.1)
                     
                     st.success(f"✅ Successfully imported/updated {success_count} {cpt_type}s.")
-                    st.session_state[f"cpt_{cpt_type}"] = [] # Clear cache to refetch
+                    st.session_state[f"cpt_{cpt_type}"] = []
                     st.rerun()
 
 # -------------------------------------
@@ -990,7 +998,7 @@ with tab4:
                 if st.button("Import Data to DB"):
                     try:
                         with db_connection.cursor() as cursor:
-                            # Create table if not exists (simple schema from DataFrame)
+                            # Create table if not exists
                             columns_sql = ", ".join([f"`{col}` TEXT" for col in df_import_db.columns])
                             create_table_sql = f"CREATE TABLE IF NOT EXISTS `{import_table}` ({columns_sql})"
                             cursor.execute(create_table_sql)
@@ -1008,7 +1016,3 @@ with tab4:
 
         if db_connection:
             db_connection.close()
-
-
-
-
