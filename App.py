@@ -1,3 +1,4 @@
+
 """
 Streamlit App: WP Project Manager + Custom Post Types - Enhanced Version
 -------------------------------------------------------------------------
@@ -75,7 +76,7 @@ def wp_get_json(url: str, params: Dict[str, Any] = None, silent_on_error: bool =
             try:
                 error_data = res.json()
                 if isinstance(error_data, dict):
-                    error_msg += f"\n{error_data.get('message', res.text)}"
+                    error_msg += f"\n{error_data.get(\'message\', res.text)}"
             except:
                 error_msg += f"\n{res.text}"
             st.error(error_msg)
@@ -96,10 +97,10 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         try:
             error_data = res.json()
             if isinstance(error_data, dict):
-                error_msg += f": {error_data.get('message', str(e))}"
+                error_msg += f": {error_data.get(\'message\', str(e))}"
             st.error(error_msg)
         except:
-            if 'text/html' in res.headers.get('content-type', ''):
+            if \'text/html\' in res.headers.get(\'content-type\', \'\'):
                 st.error(f"{error_msg}: WordPress returned an HTML error page (likely a PHP fatal error)")
                 with st.expander("View Error Details"):
                     st.code(res.text[:1000])
@@ -119,7 +120,7 @@ def wp_put_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"PUT failed: {error_data.get('message', str(e))}")
+            st.error(f"PUT failed: {error_data.get(\'message\', str(e))}")
         except:
             st.error(f"PUT failed: {e}\n{res.text}")
         return None
@@ -193,7 +194,7 @@ def clean_payload(item: dict, selected_fields: List[str], skip_empty: bool = Tru
     
     for k, v in item.items():
         # Skip ID field if requested
-        if exclude_id and k.lower() in ['id']:
+        if exclude_id and k.lower() in [\'id\']:
             continue
         
         # Only include selected fields
@@ -210,7 +211,7 @@ def clean_payload(item: dict, selected_fields: List[str], skip_empty: bool = Tru
                 continue
         
         # Convert numpy types to Python types
-        if hasattr(v, 'item'):
+        if hasattr(v, \'item\'):
             v = v.item()
         
         payload[k] = v
@@ -377,7 +378,7 @@ with tab1:
                 with st.spinner("Creating project..."):
                     res = wp_post_json(projects_url, payload)
                     if res:
-                        st.success(f"✅ Project created successfully! ID: {res.get('id')}")
+                        st.success(f"✅ Project created successfully! ID: {res.get(\'id\')}")
                         if show_raw_json:
                             st.json(res)
                         time.sleep(1)
@@ -391,7 +392,7 @@ with tab1:
         "Upload Projects CSV/JSON", 
         type=["csv", "json"], 
         key="upload_projects_bulk",
-        help="Upload a file with project data. Include 'id' column for updates."
+        help="Upload a file with project data. Include \'id\' column for updates."
     )
     
     if uploaded_projects_file:
@@ -403,7 +404,7 @@ with tab1:
                 projects_import_data = [projects_import_data]
         else:
             df_projects_import = pd.read_csv(uploaded_projects_file)
-            projects_import_data = df_projects_import.to_dict('records')
+            projects_import_data = df_projects_import.to_dict(\'records\')
         
         st.write(f"**Preview** ({len(projects_import_data)} items):")
         st.dataframe(pd.DataFrame(projects_import_data).head(10), use_container_width=True)
@@ -425,531 +426,323 @@ with tab1:
             selected_project_fields = st.multiselect(
                 "Fields to include:",
                 options=available_fields,
-                default=[f for f in default_project_fields if f in available_fields],
-                key="project_fields_select"
+                default=[f for f in default_project_fields if f in available_fields]
             )
             
-            skip_empty_projects = st.checkbox("Skip empty/null values", value=True, key="skip_empty_projects")
+            force_project_id = st.checkbox("Force Project ID (for tasks/tasklists)", value=False, help="If checked, all imported tasks/tasklists will be assigned to the currently selected project.")
+            
+            if force_project_id:
+                st.warning("⚠️ This will override any project_id in your CSV for tasks/tasklists.")
+
+        import_projects_btn = st.button("🚀 Start Project Import", type="primary", use_container_width=True)
         
-        if st.button("🚀 Import Projects", use_container_width=True, type="primary", key="import_projects_btn"):
-            created_count = 0
-            updated_count = 0
-            failed_count = 0
-            skipped_count = 0
-            
-            items_to_process = projects_import_data[:1] if projects_test_import else projects_import_data
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for idx, item in enumerate(items_to_process):
-                status_text.text(f"Processing project {idx + 1}/{len(items_to_process)}...")
-                
-                item_id = item.get('id') or item.get('ID')
-                
-                should_create = False
-                should_update = False
-                
-                if import_mode == "Create New Only":
-                    should_create = True
-                elif import_mode == "Update Existing Only":
-                    if item_id:
-                        should_update = True
-                    else:
-                        skipped_count += 1
-                        continue
-                else:
-                    should_update = bool(item_id)
-                    should_create = not bool(item_id)
-                
-                payload = clean_payload(item, selected_project_fields, skip_empty_projects)
-                
-                if 'title' not in payload or not payload.get('title'):
-                    st.warning(f"Project {idx + 1}: Skipping - missing 'title'")
-                    failed_count += 1
-                    continue
-                
-                if projects_test_import:
-                    st.write(f"**Project {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
-                    if should_update:
-                        st.write(f"**Target ID:** {item_id}")
-                    st.json(payload)
-                
-                if should_update:
-                    endpoint = f"{projects_url}/{item_id}"
-                    res = wp_put_json(endpoint, payload)
-                    if res:
-                        updated_count += 1
-                        if projects_test_import:
-                            st.success(f"✅ Updated project ID {item_id}")
-                            st.json(res)
-                    else:
-                        failed_count += 1
-                
-                elif should_create:
-                    endpoint = projects_url
-                    res = wp_post_json(endpoint, payload)
-                    if res:
-                        created_count += 1
-                        if projects_test_import:
-                            st.success(f"✅ Created project! New ID: {res.get('id')}")
-                            st.json(res)
-                    else:
-                        failed_count += 1
-                
-                progress_bar.progress((idx + 1) / len(items_to_process))
-                
-                if not projects_test_import:
-                    time.sleep(0.2)
-            
-            progress_bar.empty()
-            status_text.empty()
-            
-            st.markdown("### 📊 Import Summary")
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("✅ Created", created_count)
-            col2.metric("🔄 Updated", updated_count)
-            col3.metric("⏭️ Skipped", skipped_count)
-            col4.metric("❌ Failed", failed_count)
-            
-            if not projects_test_import and (created_count > 0 or updated_count > 0):
-                if st.button("🔄 Refresh Projects List"):
+        if import_projects_btn:
+            if not projects_import_data:
+                st.error("No project data to import.")
+            else:
+                with st.spinner("Importing projects..."):
+                    success_count = 0
+                    for idx, item in enumerate(projects_import_data):
+                        if projects_test_import and idx > 0:
+                            st.info("Test mode: Only processed the first item.")
+                            break
+                        
+                        payload = clean_payload(item, selected_project_fields, exclude_id=False)
+                        
+                        item_id = payload.get("id")
+                        
+                        if import_mode == "Create New Only" or (import_mode == "Smart (Create + Update)" and not item_id):
+                            # Create new project
+                            if "id" in payload: del payload["id"]
+                            res = wp_post_json(projects_url, payload)
+                            if res: success_count += 1
+                        elif import_mode == "Update Existing Only" or (import_mode == "Smart (Create + Update)" and item_id):
+                            # Update existing project
+                            if item_id:
+                                res = wp_put_json(f"{projects_url}/{item_id}", payload)
+                                if res: success_count += 1
+                            else:
+                                st.warning(f"Skipping item {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                        
+                        time.sleep(0.1) # Be nice to the API
+                    
+                    st.success(f"✅ Successfully imported/updated {success_count} projects.")
+                    st.session_state["projects"] = [] # Clear cache to refetch
                     st.rerun()
 
-    # Edit Single Project
-    st.markdown("---")
-    st.subheader("✏️ Edit Single Project")
-    
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        project_id = st.text_input("Enter Project ID", key="edit_project_id")
-    with col2:
-        load_btn = st.button("📥 Load", use_container_width=True)
-    
-    if load_btn and project_id:
-        with st.spinner("Loading project..."):
-            proj = wp_get_json(f"{projects_url}/{project_id}")
-            if proj:
-                st.session_state["edit_project"] = proj
-                st.success("✅ Project loaded")
-                if show_raw_json:
-                    with st.expander("Raw JSON"):
-                        st.json(proj)
-
-    edit_project = st.session_state.get("edit_project")
-    if edit_project:
-        with st.form("edit_project_form"):
-            new_title = st.text_input("Title", extract_title(edit_project))
-            new_status = st.selectbox("Status", ["active", "pending", "completed", "archived"], 
-                                     index=["active", "pending", "completed", "archived"].index(edit_project.get("status", "active")) if edit_project.get("status") in ["active", "pending", "completed", "archived"] else 0)
-            new_desc = st.text_area("Description", edit_project.get("description") or "", height=150)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                save_btn = st.form_submit_button("💾 Save", use_container_width=True)
-            with col2:
-                delete_btn = st.form_submit_button("🗑️ Delete", use_container_width=True)
-            
-            if save_btn:
-                payload = {"title": new_title, "status": new_status, "description": new_desc}
-                res = wp_put_json(f"{projects_url}/{edit_project.get('id')}", payload)
-                if res:
-                    st.success("✅ Project updated")
-                    st.session_state["edit_project"] = res
-            
-            if delete_btn:
-                if st.session_state.get("confirm_delete"):
-                    res = wp_delete_json(f"{projects_url}/{edit_project.get('id')}")
-                    if res:
-                        st.success("✅ Project deleted")
-                        st.session_state.pop("edit_project", None)
-                        st.session_state.pop("confirm_delete", None)
-                        st.rerun()
-                else:
-                    st.session_state["confirm_delete"] = True
-                    st.warning("⚠️ Click Delete again to confirm")
-
 # -------------------------------------
-# TAB 2: TASKS & TASK LISTS - UNIFIED IMPORT
+# TAB 2: TASKS & TASK LISTS
 # -------------------------------------
 with tab2:
-    st.header("📋 Task Lists & Tasks Management")
+    st.header("📋 Tasks & Task Lists")
     
-    if not projects:
-        st.info("👈 Please fetch projects first from the 'WP Projects' tab.")
+    # Select Project for Task/Tasklist Operations
+    if "projects" not in st.session_state or not st.session_state["projects"]:
+        st.warning("Please fetch projects first in the 'WP Projects' tab.")
+        selected_project_id = None
+        selected_project_title = ""
     else:
-        project_options = {f"{p.get('id')} - {extract_title(p)}": p.get("id") for p in projects}
-        selected_project_label = st.selectbox("Select Project", options=list(project_options.keys()))
-        selected_project_id = project_options[selected_project_label]
+        project_titles = {p["id"]: extract_title(p) for p in st.session_state["projects"] if "id" in p}
+        selected_project_id = st.selectbox(
+            "Select Project",
+            options=list(project_titles.keys()),
+            format_func=lambda x: project_titles[x],
+            key="task_project_select"
+        )
+        selected_project_title = project_titles.get(selected_project_id, "")
 
-        task_lists = st.session_state.get("current_task_lists", [])
-        tasks = st.session_state.get("current_tasks", [])
+    if selected_project_id:
+        st.info(f"Selected Project: **{selected_project_title}** (ID: {selected_project_id})")
         
-        col1, col2 = st.columns(2)
-        col1.metric("📝 Task Lists", len(task_lists))
-        col2.metric("✅ Tasks", len(tasks))
-        st.markdown("---")
-        
-        # Auto-fetch when project changes
-        if selected_project_id and (st.session_state.get("current_project_id") != selected_project_id or not st.session_state.get("current_task_lists") or not st.session_state.get("current_tasks")):
-            with st.spinner(f"Fetching data for project {selected_project_id}..."):
-                task_lists = fetch_all_pages(f"{projects_url}/{selected_project_id}/task-lists")
-                tasks = fetch_all_pages(f"{projects_url}/{selected_project_id}/tasks")
+        # Fetch Task Lists and Tasks for Selected Project
+        if st.button(f"🔄 Fetch Task Lists & Tasks for {selected_project_title}"):
+            with st.spinner(f"Fetching task lists and tasks for project {selected_project_id}..."):
+                task_lists_url = f"{projects_url}/{selected_project_id}/task-lists"
+                tasks_url = f"{projects_url}/{selected_project_id}/tasks"
                 
-                st.session_state["current_task_lists"] = task_lists or []
-                st.session_state["current_tasks"] = tasks or []
-                st.session_state["current_project_id"] = selected_project_id
+                fetched_task_lists = wp_get_json(task_lists_url)
+                fetched_tasks = wp_get_json(tasks_url)
                 
-                if not task_lists and not tasks:
-                    st.warning("No data found or permission denied")
-                else:
-                    st.success(f"✅ Fetched {len(task_lists or [])} task lists, {len(tasks or [])} tasks")
-        
-        if st.button("🔄 Re-fetch Data", use_container_width=True):
-            with st.spinner("Re-fetching..."):
-                task_lists = fetch_all_pages(f"{projects_url}/{selected_project_id}/task-lists")
-                tasks = fetch_all_pages(f"{projects_url}/{selected_project_id}/tasks")
+                st.session_state[f"task_lists_{selected_project_id}"] = fetched_task_lists if isinstance(fetched_task_lists, list) else []
+                st.session_state[f"tasks_{selected_project_id}"] = fetched_tasks if isinstance(fetched_tasks, list) else []
                 
-                st.session_state["current_task_lists"] = task_lists or []
-                st.session_state["current_tasks"] = tasks or []
-                st.session_state["current_project_id"] = selected_project_id
-                
-                st.success(f"✅ Re-fetched {len(task_lists or [])} task lists, {len(tasks or [])} tasks")
-                st.rerun()
+                st.success(f"✅ Fetched {len(st.session_state[f\"task_lists_{selected_project_id}\"])} task lists and {len(st.session_state[f\"tasks_{selected_project_id}\"])} tasks.")
+                if show_raw_json:
+                    with st.expander("Raw Task Lists JSON"):
+                        st.json(fetched_task_lists)
+                    with st.expander("Raw Tasks JSON"):
+                        st.json(fetched_tasks)
 
-        # Display and download current data
+        # Display Task Lists
+        task_lists = st.session_state.get(f"task_lists_{selected_project_id}", [])
         if task_lists:
-            st.markdown("---")
             st.subheader("📝 Task Lists")
-            df_task_lists = pd.DataFrame(task_lists)
-            st.dataframe(df_task_lists, use_container_width=True)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                download_json(task_lists, f"project_{selected_project_id}_task_lists.json", "⬇️ Download JSON")
-            with col2:
-                csv_tl = df_task_lists.to_csv(index=False).encode("utf-8")
-                st.download_button("⬇️ Download CSV", csv_tl, f"project_{selected_project_id}_task_lists.csv", "text/csv")
-        
-        if tasks:
-            st.markdown("---")
-            st.subheader("✅ Tasks")
-            df_tasks = pd.DataFrame(tasks)
-            st.dataframe(df_tasks, use_container_width=True)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                download_json(tasks, f"project_{selected_project_id}_tasks.json", "⬇️ Download JSON")
-            with col2:
-                csv_t = df_tasks.to_csv(index=False).encode("utf-8")
-                st.download_button("⬇️ Download CSV", csv_t, f"project_{selected_project_id}_tasks.csv", "text/csv")
+            tl_rows = []
+            for tl in task_lists:
+                if not isinstance(tl, dict): continue
+                tl_rows.append({
+                    "ID": tl.get("id"),
+                    "Title": extract_title(tl),
+                    "Status": tl.get("status") or "",
+                    "Task Count": tl.get("task_count") or 0
+                })
+            st.dataframe(pd.DataFrame(tl_rows), use_container_width=True)
+            download_json(task_lists, f"task_lists_project_{selected_project_id}.json", label="⬇️ Download Task Lists JSON")
 
-        # UNIFIED IMPORT SECTION - NEW IMPLEMENTATION
+        # Display Tasks
+        tasks = st.session_state.get(f"tasks_{selected_project_id}", [])
+        if tasks:
+            st.subheader("✅ Tasks")
+            task_rows = []
+            for task in tasks:
+                if not isinstance(task, dict): continue
+                task_rows.append({
+                    "ID": task.get("id"),
+                    "Title": extract_title(task),
+                    "Task List": task.get("task_list_title") or "",
+                    "Status": task.get("status") or "",
+                    "Due Date": task.get("due_date") or ""
+                })
+            st.dataframe(pd.DataFrame(task_rows), use_container_width=True)
+            download_json(tasks, f"tasks_project_{selected_project_id}.json", label="⬇️ Download Tasks JSON")
+
+        st.markdown("---")
+        st.subheader("➕ Create New Task List")
+        with st.form("create_task_list_form"):
+            new_tl_title = st.text_input("Task List Title *", placeholder="Enter task list name")
+            new_tl_desc = st.text_area("Description", placeholder="Task list description (optional)")
+            create_tl_btn = st.form_submit_button("➕ Create Task List", type="primary", use_container_width=True)
+            
+            if create_tl_btn:
+                if not new_tl_title or new_tl_title.strip() == "":
+                    st.error("❌ Task List title is required!")
+                else:
+                    payload = {
+                        "title": new_tl_title.strip(),
+                        "description": new_tl_desc,
+                        "project_id": selected_project_id
+                    }
+                    with st.spinner("Creating task list..."):
+                        res = wp_post_json(f"{projects_url}/{selected_project_id}/task-lists", payload)
+                        if res:
+                            st.success(f"✅ Task List created successfully! ID: {res.get(\'id\')}")
+                            if show_raw_json:
+                                st.json(res)
+                            time.sleep(1)
+                            st.rerun()
+
+        st.markdown("---")
+        st.subheader("➕ Create New Task")
+        with st.form("create_task_form"):
+            task_lists_for_dropdown = {tl["id"]: extract_title(tl) for tl in task_lists}
+            selected_task_list_id = st.selectbox(
+                "Select Task List",
+                options=list(task_lists_for_dropdown.keys()),
+                format_func=lambda x: task_lists_for_dropdown[x],
+                key="task_list_select"
+            )
+            new_task_title = st.text_input("Task Title *", placeholder="Enter task name")
+            new_task_desc = st.text_area("Description", placeholder="Task description (optional)")
+            new_task_due_date = st.date_input("Due Date", value=None)
+            create_task_btn = st.form_submit_button("➕ Create Task", type="primary", use_container_width=True)
+            
+            if create_task_btn:
+                if not new_task_title or new_task_title.strip() == "":
+                    st.error("❌ Task title is required!")
+                elif not selected_task_list_id:
+                    st.error("❌ Please select a Task List.")
+                else:
+                    payload = {
+                        "title": new_task_title.strip(),
+                        "description": new_task_desc,
+                        "task_list_id": selected_task_list_id,
+                        "project_id": selected_project_id # Ensure project_id is sent
+                    }
+                    if new_task_due_date:
+                        payload["due_date"] = str(new_task_due_date)
+                    
+                    with st.spinner("Creating task..."):
+                        res = wp_post_json(f"{projects_url}/{selected_project_id}/tasks", payload)
+                        if res:
+                            st.success(f"✅ Task created successfully! ID: {res.get(\'id\')}")
+                            if show_raw_json:
+                                st.json(res)
+                            time.sleep(1)
+                            st.rerun()
+
         st.markdown("---")
         st.subheader("📥 Unified Import: Task Lists & Tasks from One File")
         
-        st.info("💡 **Upload a single CSV file containing both task lists and tasks!** The file should have a 'type' column with values 'tasklist' or 'task', and tasks should reference their parent task list via 'task_list_name' column.")
-        
         uploaded_unified_file = st.file_uploader(
-            "Upload Unified CSV/JSON", 
-            type=["csv", "json"], 
-            key=f"upload_unified_{selected_project_id}",
-            help="File containing both task lists and tasks with a 'type' column to differentiate"
+            "Upload Unified CSV (Task Lists & Tasks)", 
+            type=["csv"], 
+            key="upload_unified_bulk",
+            help="Upload a CSV file containing both task lists and tasks. Must have a 'type' column (tasklist/task)."
         )
         
         if uploaded_unified_file:
-            file_ext = uploaded_unified_file.name.split(".")[-1].lower()
-            
-            if file_ext == "json":
-                unified_import_data = json.load(uploaded_unified_file)
-                if isinstance(unified_import_data, dict):
-                    unified_import_data = [unified_import_data]
-            else:
-                df_unified = pd.read_csv(uploaded_unified_file)
-                unified_import_data = df_unified.to_dict('records')
+            df_unified_import = pd.read_csv(uploaded_unified_file)
+            unified_import_data = df_unified_import.to_dict(\'records\')
             
             st.write(f"**Preview** ({len(unified_import_data)} items):")
             st.dataframe(pd.DataFrame(unified_import_data).head(10), use_container_width=True)
             
-            # Separate task lists and tasks
-            task_lists_data = [item for item in unified_import_data if str(item.get('type', '')).lower() == 'tasklist']
-            tasks_data = [item for item in unified_import_data if str(item.get('type', '')).lower() == 'task']
-            
             col1, col2 = st.columns(2)
-            col1.metric("📝 Task Lists Found", len(task_lists_data))
-            col2.metric("✅ Tasks Found", len(tasks_data))
-            
-            # Import Configuration
-            st.markdown("---")
-            st.markdown("### ⚙️ Import Configuration")
-            
-            col_config1, col_config2 = st.columns(2)
-            
-            with col_config1:
+            with col1:
                 unified_import_mode = st.radio(
                     "Import Mode",
                     ["Create New Only", "Update Existing Only", "Smart (Create + Update)"],
-                    key=f"unified_import_mode_{selected_project_id}",
-                    help="Create: Ignores ID. Update: Only items with ID. Smart: Auto-detects based on ID presence."
+                    key="unified_import_mode",
+                    help="Create: Ignores ID. Update: Only items with ID. Smart: Creates if no ID, updates if ID exists."
                 )
+            with col2:
+                unified_test_import = st.checkbox("Test with first item", value=True, key="test_unified_import")
             
-            with col_config2:
-                unified_test_import = st.checkbox(
-                    "Test Mode (first item of each type)",
-                    value=True,
-                    key=f"unified_test_import_{selected_project_id}",
-                    help="Test with first item of each type before full import"
-                )
+            force_current_project_id = st.checkbox(
+                "Force Current Project ID", 
+                value=True, 
+                help="If checked, all imported task lists and tasks will be assigned to the currently selected project."
+            )
             
-            # IMPORT BUTTON
-            st.markdown("---")
-            if st.button("🚀 Start Unified Import", use_container_width=True, type="primary", key=f"unified_import_btn_{selected_project_id}"):
-                
-                # Dictionary to map task list names to their created IDs
-                task_list_name_to_id = {}
-                
-                total_tl_created = 0
-                total_tl_updated = 0
-                total_tl_failed = 0
-                total_tl_skipped = 0
-                
-                total_t_created = 0
-                total_t_updated = 0
-                total_t_failed = 0
-                total_t_skipped = 0
-                
-                # PHASE 1: Import Task Lists
-                if task_lists_data:
-                    st.markdown("### 📝 Phase 1: Importing Task Lists")
-                    
-                    tl_items = task_lists_data[:1] if unified_test_import else task_lists_data
-                    progress_tl = st.progress(0)
-                    status_tl = st.empty()
-                    
-                    for idx, item in enumerate(tl_items):
-                        status_tl.text(f"Processing Task List {idx + 1}/{len(tl_items)}...")
+            if force_current_project_id:
+                st.warning(f"⚠️ All imported items will be assigned to Project ID: {selected_project_id}")
+
+            start_unified_import_btn = st.button("🚀 Start Unified Import", type="primary", use_container_width=True)
+            
+            if start_unified_import_btn:
+                if not unified_import_data:
+                    st.error("No data to import.")
+                else:
+                    with st.spinner("Importing unified data..."):
+                        task_list_success = 0
+                        task_success = 0
                         
-                        item_id = item.get('id') or item.get('ID')
-                        task_list_name = item.get('title', '')
-                        
-                        should_create = False
-                        should_update = False
-                        
-                        if unified_import_mode == "Create New Only":
-                            should_create = True
-                        elif unified_import_mode == "Update Existing Only":
-                            if item_id:
-                                should_update = True
-                            else:
-                                total_tl_skipped += 1
+                        # Cache task list IDs by title for task assignment
+                        task_list_id_map = {}
+                        for tl in task_lists:
+                            task_list_id_map[extract_title(tl)] = tl["id"]
+
+                        for idx, item in enumerate(unified_import_data):
+                            if unified_test_import and idx > 0:
+                                st.info("Test mode: Only processed the first item.")
+                                break
+                            
+                            item_type = item.get("type")
+                            if not item_type:
+                                st.warning(f"Skipping item {idx+1}: No 'type' specified. Item: {item.get(\'title\', \'N/A\')}")
                                 continue
-                        else:
-                            should_update = bool(item_id)
-                            should_create = not bool(item_id)
+                            
+                            payload = clean_payload(item, [], exclude_id=False) # Clean all fields
+                            
+                            # Ensure description is a string, handling NaN values
+                            if 'description' in payload:
+                                if pd.isna(payload['description']):
+                                    payload['description'] = ''
+                                else:
+                                    payload['description'] = str(payload['description'])
+
+                            # Handle date fields (start_at, due_date) - ensure they are strings or empty strings
+                            for date_field in ['start_at', 'due_date']:
+                                if date_field in payload:
+                                    if pd.isna(payload[date_field]) or payload[date_field] is None:
+                                        payload[date_field] = ''
+                                    else:
+                                        payload[date_field] = str(payload[date_field])
+                                else:
+                                    payload[date_field] = '' # Ensure field exists even if not in CSV
+
+                            # Force project_id if checked
+                            if force_current_project_id and selected_project_id:
+                                payload["project_id"] = selected_project_id
+                            elif "project_id" not in payload or pd.isna(payload["project_id"]):
+                                # If not forced and not present, assign to selected project as fallback
+                                payload["project_id"] = selected_project_id
+
+                            item_id = payload.get("id")
+                            
+                            if item_type == "tasklist":
+                                if unified_import_mode == "Create New Only" or (unified_import_mode == "Smart (Create + Update)" and not item_id):
+                                    if "id" in payload: del payload["id"]
+                                    res = wp_post_json(f"{projects_url}/{payload[\'project_id\']}/task-lists", payload)
+                                    if res:
+                                        task_list_success += 1
+                                        task_list_id_map[extract_title(res)] = res["id"] # Update map for new task lists
+                                elif unified_import_mode == "Update Existing Only" or (unified_import_mode == "Smart (Create + Update)" and item_id):
+                                    if item_id:
+                                        res = wp_put_json(f"{projects_url}/{payload[\'project_id\']}/task-lists/{item_id}", payload)
+                                        if res: task_list_success += 1
+                                    else:
+                                        st.warning(f"Skipping task list {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                            
+                            elif item_type == "task":
+                                # Assign task to task list
+                                task_list_name = item.get("task_list_name")
+                                if task_list_name and task_list_name in task_list_id_map:
+                                    payload["task_list_id"] = task_list_id_map[task_list_name]
+                                elif task_list_name:
+                                    st.warning(f"Task \'{item.get(\'title\', \'N/A\')}\' refers to unknown task list \'{task_list_name}\'. Skipping.")
+                                    continue
+                                else:
+                                    st.warning(f"Task \'{item.get(\'title\', \'N/A\')}\' has no \'task_list_name\'. Skipping.")
+                                    continue
+
+                                if unified_import_mode == "Create New Only" or (unified_import_mode == "Smart (Create + Update)" and not item_id):
+                                    if "id" in payload: del payload["id"]
+                                    res = wp_post_json(f"{projects_url}/{payload[\'project_id\']}/tasks", payload)
+                                    if res: task_success += 1
+                                elif unified_import_mode == "Update Existing Only" or (unified_import_mode == "Smart (Create + Update)" and item_id):
+                                    if item_id:
+                                        res = wp_put_json(f"{projects_url}/{payload[\'project_id\']}/tasks/{item_id}", payload)
+                                        if res: task_success += 1
+                                    else:
+                                        st.warning(f"Skipping task {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                            
+                            time.sleep(0.1) # Be nice to the API
                         
-                        # Build payload for task list
-                        payload = {
-                            'title': item.get('title', ''),
-                            'description': item.get('description', ''),
-                            'project_id': selected_project_id
-                        }
-                        
-                        # Add optional fields
-                        if 'order' in item and item['order']:
-                            payload['order'] = item['order']
-                        if 'status' in item and item['status']:
-                            payload['status'] = item['status']
-                        if 'milestone_id' in item and item['milestone_id']:
-                            payload['milestone_id'] = item['milestone_id']
-                        
-                        if not payload.get('title'):
-                            st.warning(f"Task List {idx + 1}: Skipping - missing 'title'")
-                            total_tl_failed += 1
-                            continue
-                        
-                        if unified_test_import:
-                            st.write(f"**Task List {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
-                            if should_update:
-                                st.write(f"**Target ID:** {item_id}")
-                            st.json(payload)
-                        
-                        if should_update:
-                            endpoint = f"{projects_url}/{selected_project_id}/task-lists/{item_id}"
-                            res = wp_put_json(endpoint, payload)
-                            if res:
-                                total_tl_updated += 1
-                                task_list_name_to_id[task_list_name] = item_id
-                                if unified_test_import:
-                                    st.success(f"✅ Updated Task List ID {item_id}")
-                                    st.json(res)
-                            else:
-                                total_tl_failed += 1
-                        
-                        elif should_create:
-                            endpoint = f"{projects_url}/{selected_project_id}/task-lists"
-                            res = wp_post_json(endpoint, payload)
-                            if res:
-                                total_tl_created += 1
-                                new_id = res.get('id')
-                                task_list_name_to_id[task_list_name] = new_id
-                                if unified_test_import:
-                                    st.success(f"✅ Created Task List! New ID: {new_id}")
-                                    st.json(res)
-                            else:
-                                total_tl_failed += 1
-                        
-                        progress_tl.progress((idx + 1) / len(tl_items))
-                        
-                        if not unified_test_import:
-                            time.sleep(0.2)
-                    
-                    progress_tl.empty()
-                    status_tl.empty()
-                    
-                    st.markdown("#### Task Lists Import Summary")
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("✅ Created", total_tl_created)
-                    col2.metric("🔄 Updated", total_tl_updated)
-                    col3.metric("⏭️ Skipped", total_tl_skipped)
-                    col4.metric("❌ Failed", total_tl_failed)
-                
-                # PHASE 2: Import Tasks
-                if tasks_data:
-                    st.markdown("---")
-                    st.markdown("### ✅ Phase 2: Importing Tasks")
-                    
-                    t_items = tasks_data[:1] if unified_test_import else tasks_data
-                    progress_t = st.progress(0)
-                    status_t = st.empty()
-                    
-                    for idx, item in enumerate(t_items):
-                        status_t.text(f"Processing Task {idx + 1}/{len(t_items)}...")
-                        
-                        item_id = item.get('id') or item.get('ID')
-                        task_list_name = item.get('task_list_name', '')
-                        
-                        should_create = False
-                        should_update = False
-                        
-                        if unified_import_mode == "Create New Only":
-                            should_create = True
-                        elif unified_import_mode == "Update Existing Only":
-                            if item_id:
-                                should_update = True
-                            else:
-                                total_t_skipped += 1
-                                continue
-                        else:
-                            should_update = bool(item_id)
-                            should_create = not bool(item_id)
-                        
-                        # Build payload for task
-                        payload = {
-                            'title': item.get('title', ''),
-                            'description': item.get('description', ''),
-                            'project_id': selected_project_id
-                        }
-                        
-                        # Map task_list_name to task_list_id
-                        if task_list_name and task_list_name in task_list_name_to_id:
-                            payload['task_list_id'] = task_list_name_to_id[task_list_name]
-                        elif 'task_list_id' in item and item['task_list_id']:
-                            payload['task_list_id'] = item['task_list_id']
-                        
-                        # Add optional fields
-                        optional_fields = ['start_at', 'due_date', 'complexity', 'priority', 'status', 'parent_id', 'order', 'payable', 'recurrent', 'estimation']
-                        for field in optional_fields:
-                            if field in item and item[field] not in [None, '', 'None']:
-                                payload[field] = item[field]
-                        
-                        if not payload.get('title'):
-                            st.warning(f"Task {idx + 1}: Skipping - missing 'title'")
-                            total_t_failed += 1
-                            continue
-                        
-                        if unified_test_import:
-                            st.write(f"**Task {idx + 1} Action:** {'UPDATE' if should_update else 'CREATE'}")
-                            if should_update:
-                                st.write(f"**Target ID:** {item_id}")
-                            st.json(payload)
-                        
-                        if should_update:
-                            endpoint = f"{projects_url}/{selected_project_id}/tasks/{item_id}"
-                            res = wp_put_json(endpoint, payload)
-                            if res:
-                                total_t_updated += 1
-                                if unified_test_import:
-                                    st.success(f"✅ Updated Task ID {item_id}")
-                                    st.json(res)
-                            else:
-                                total_t_failed += 1
-                        
-                        elif should_create:
-                            endpoint = f"{projects_url}/{selected_project_id}/tasks"
-                            res = wp_post_json(endpoint, payload)
-                            if res:
-                                total_t_created += 1
-                                if unified_test_import:
-                                    st.success(f"✅ Created Task! New ID: {res.get('id')}")
-                                    st.json(res)
-                            else:
-                                total_t_failed += 1
-                        
-                        progress_t.progress((idx + 1) / len(t_items))
-                        
-                        if not unified_test_import:
-                            time.sleep(0.2)
-                    
-                    progress_t.empty()
-                    status_t.empty()
-                    
-                    st.markdown("#### Tasks Import Summary")
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("✅ Created", total_t_created)
-                    col2.metric("🔄 Updated", total_t_updated)
-                    col3.metric("⏭️ Skipped", total_t_skipped)
-                    col4.metric("❌ Failed", total_t_failed)
-                
-                # Final Summary
-                st.markdown("---")
-                st.markdown("### 🎉 Overall Import Summary")
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("📝 Task Lists Created", total_tl_created)
-                col2.metric("📝 Task Lists Updated", total_tl_updated)
-                col3.metric("✅ Tasks Created", total_t_created)
-                col4.metric("✅ Tasks Updated", total_t_updated)
-                
-                if not unified_test_import and (total_tl_created > 0 or total_tl_updated > 0 or total_t_created > 0 or total_t_updated > 0):
-                    if st.button("🔄 Refresh Data"):
+                        st.success(f"✅ Successfully imported {task_list_success} task lists and {task_success} tasks.")
+                        st.session_state[f"task_lists_{selected_project_id}"] = [] # Clear cache to refetch
+                        st.session_state[f"tasks_{selected_project_id}"] = [] # Clear cache to refetch
                         st.rerun()
-
-        # Display detailed task lists
-        if task_lists:
-            st.markdown("---")
-            st.subheader("📝 Task Lists Details")
-            for tl in task_lists:
-                if not isinstance(tl, dict):
-                    continue
-                tl_title = tl.get("title")
-                if isinstance(tl_title, dict):
-                    tl_title = tl_title.get("rendered", "")
-                
-                with st.expander(f"Task List: {tl_title} (ID: {tl.get('id')})"):
-                    st.json(tl)
-
-        # Display detailed tasks
-        if tasks:
-            st.markdown("---")
-            st.subheader("✅ Tasks Details")
-            for t in tasks:
-                if not isinstance(t, dict):
-                    continue
-                t_title = t.get("title")
-                if isinstance(t_title, dict):
-                    t_title = t_title.get("rendered", "")
-                
-                with st.expander(f"Task: {t_title} (ID: {t.get('id')})"):
-                    st.json(t)
 
 # -------------------------------------
 # TAB 3: CUSTOM POST TYPES
@@ -957,259 +750,251 @@ with tab2:
 with tab3:
     st.header("🧱 Custom Post Types")
     
-    # CPT selection
-    cpt_types = wp_get_json(f"{wp_base}/wp-json/wp/v2/types")
-    if cpt_types:
-        cpt_options = {cpt_types[t]["labels"]["singular_name"]: t for t in cpt_types if cpt_types[t].get("rest_base") and cpt_types[t].get("_links", {}).get("wp:items")}
-        
-        if not cpt_options:
-            st.warning("No custom post types with REST API support found.")
-        else:
-            selected_cpt_label = st.selectbox("Select Custom Post Type", options=list(cpt_options.keys()))
-            selected_cpt_slug = cpt_options[selected_cpt_label]
-            
-            st.markdown("---")
-            st.subheader(f"Posts for {selected_cpt_label}")
-            
-            if st.button(f"🔄 Fetch All {selected_cpt_label} Posts", key="fetch_cpt_posts"):
-                with st.spinner(f"Fetching {selected_cpt_label} posts..."):
-                    cpt_posts = fetch_all_pages(f"{posts_url}/{selected_cpt_slug}")
-                    st.session_state["current_cpt_posts"] = cpt_posts
-                    st.session_state["current_cpt_slug"] = selected_cpt_slug
-                    st.success(f"✅ Fetched {len(cpt_posts)} {selected_cpt_label} posts.")
-                    if show_raw_json:
-                        with st.expander("Raw JSON Response"):
-                            st.json(cpt_posts)
-            
-            current_cpt_posts = st.session_state.get("current_cpt_posts", [])
-            current_cpt_slug = st.session_state.get("current_cpt_slug", "")
-            
-            if current_cpt_posts and current_cpt_slug == selected_cpt_slug:
-                df_cpt = pd.DataFrame(current_cpt_posts)
-                st.dataframe(df_cpt, use_container_width=True, height=400)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    download_json(current_cpt_posts, f"{selected_cpt_slug}.json", label=f"⬇️ Download {selected_cpt_label} JSON")
-                with col2:
-                    csv_cpt = df_cpt.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        label=f"⬇️ Download {selected_cpt_label} CSV",
-                        data=csv_cpt,
-                        file_name=f"{selected_cpt_slug}.csv",
-                        mime="text/csv"
-                    )
-                
-                # Import CPT
-                st.markdown("---")
-                st.subheader(f"📥 Import {selected_cpt_label} Posts")
-                
-                uploaded_cpt_file = st.file_uploader(
-                    f"Upload {selected_cpt_label} CSV/JSON",
-                    type=["csv", "json"],
-                    key=f"upload_cpt_{selected_cpt_slug}"
-                )
-                
-                if uploaded_cpt_file:
-                    file_ext = uploaded_cpt_file.name.split(".")[-1].lower()
-                    
-                    if file_ext == "json":
-                        cpt_import_data = json.load(uploaded_cpt_file)
-                        if isinstance(cpt_import_data, dict):
-                            cpt_import_data = [cpt_import_data]
-                    else:
-                        df_cpt_import = pd.read_csv(uploaded_cpt_file)
-                        cpt_import_data = df_cpt_import.to_dict('records')
-                    
-                    st.write(f"**Preview** ({len(cpt_import_data)} items):")
-                    st.dataframe(pd.DataFrame(cpt_import_data).head(10), use_container_width=True)
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        cpt_import_mode = st.radio(
-                            "Import Mode",
-                            ["Create New Only", "Update Existing Only", "Smart (Create + Update)"],
-                            key=f"cpt_import_mode_{selected_cpt_slug}"
-                        )
-                    with col2:
-                        cpt_test_import = st.checkbox("Test with first item", value=True, key=f"cpt_test_{selected_cpt_slug}")
-                    
-                    with st.expander("⚙️ Field Selection"):
-                        cpt_available_fields = list(cpt_import_data[0].keys()) if cpt_import_data else []
-                        cpt_default_fields = ["title", "content", "status", "excerpt", "featured_media"]
-                        
-                        selected_cpt_fields = st.multiselect(
-                            "Fields to include:",
-                            options=cpt_available_fields,
-                            default=[f for f in cpt_default_fields if f in cpt_available_fields],
-                            key=f"cpt_fields_{selected_cpt_slug}"
-                        )
-                        
-                        skip_empty_cpt = st.checkbox("Skip empty/null values", value=True, key=f"skip_empty_cpt_{selected_cpt_slug}")
-                    
-                    if st.button(f"🚀 Import {selected_cpt_label}", use_container_width=True, type="primary", key=f"import_cpt_{selected_cpt_slug}"):
-                        created = 0
-                        updated = 0
-                        failed = 0
-                        skipped = 0
-                        
-                        items = cpt_import_data[:1] if cpt_test_import else cpt_import_data
-                        
-                        progress = st.progress(0)
-                        status = st.empty()
-                        
-                        for idx, item in enumerate(items):
-                            status.text(f"Processing {idx + 1}/{len(items)}...")
-                            
-                            item_id = item.get('id') or item.get('ID')
-                            
-                            should_create = False
-                            should_update = False
-                            
-                            if cpt_import_mode == "Create New Only":
-                                should_create = True
-                            elif cpt_import_mode == "Update Existing Only":
-                                if item_id:
-                                    should_update = True
-                                else:
-                                    skipped += 1
-                                    continue
-                            else:
-                                should_update = bool(item_id)
-                                should_create = not bool(item_id)
-                            
-                            payload = clean_payload(item, selected_cpt_fields, skip_empty_cpt)
-                            
-                            if 'title' not in payload and 'content' not in payload:
-                                st.warning(f"Row {idx + 1}: Skipping - missing title or content")
-                                failed += 1
-                                continue
-                            
-                            if cpt_test_import:
-                                st.write(f"**Action:** {'UPDATE' if should_update else 'CREATE'}")
-                                if should_update:
-                                    st.write(f"**Target ID:** {item_id}")
-                                st.json(payload)
-                            
-                            if should_update:
-                                endpoint = f"{posts_url}/{selected_cpt_slug}/{item_id}"
-                                res = wp_put_json(endpoint, payload)
-                                if res:
-                                    updated += 1
-                                    if cpt_test_import:
-                                        st.success(f"✅ Updated ID {item_id}")
-                                        st.json(res)
-                                else:
-                                    failed += 1
-                            
-                            elif should_create:
-                                endpoint = f"{posts_url}/{selected_cpt_slug}"
-                                res = wp_post_json(endpoint, payload)
-                                if res:
-                                    created += 1
-                                    if cpt_test_import:
-                                        st.success(f"✅ Created! New ID: {res.get('id')}")
-                                        st.json(res)
-                                else:
-                                    failed += 1
-                            
-                            progress.progress((idx + 1) / len(items))
-                            
-                            if not cpt_test_import:
-                                time.sleep(0.2)
-                        
-                        progress.empty()
-                        status.empty()
-                        
-                        st.markdown("### 📊 Import Summary")
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("✅ Created", created)
-                        col2.metric("🔄 Updated", updated)
-                        col3.metric("⏭️ Skipped", skipped)
-                        col4.metric("❌ Failed", failed)
-                        
-                        if not cpt_test_import and (created > 0 or updated > 0):
-                            if st.button(f"🔄 Refresh {selected_cpt_label} Posts"):
-                                st.rerun()
-    else:
-        st.error("Unable to fetch post types. Check your connection and permissions.")
-
-# -------------------------------------
-# TAB 4: DB EXPORT/IMPORT
-# -------------------------------------
-with tab4:
-    st.header("🗄️ Database Export / Import (Advanced)")
+    cpt_type = st.text_input("Custom Post Type Slug", "post", help="e.g., 'post', 'page', 'product', 'event'")
+    cpt_url = f"{posts_url}/{cpt_type}"
     
-    if not HAS_PYMYSQL:
-        st.warning("⚠️ Install `pymysql` to enable DB features: `pip install pymysql`")
-    else:
-        col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        fetch_cpt_btn = st.button(f"🔄 Fetch All {cpt_type.title()}s", use_container_width=True)
+    with col2:
+        if st.session_state.get(f"cpt_{cpt_type}"):
+            clear_cpt_btn = st.button("🗑️ Clear", key=f"clear_cpt_{cpt_type}", use_container_width=True)
+            if clear_cpt_btn:
+                st.session_state[f"cpt_{cpt_type}"] = []
+                st.rerun()
+
+    if fetch_cpt_btn:
+        with st.spinner(f"Fetching {cpt_type}s from WordPress..."):
+            all_cpts = fetch_all_pages(cpt_url)
+            st.session_state[f"cpt_{cpt_type}"] = all_cpts
+            st.success(f"✅ Fetched {len(all_cpts)} {cpt_type}s.")
+            
+            if show_raw_json:
+                with st.expander("Raw JSON Response"):
+                    st.json(all_cpts)
+
+    cpts = st.session_state.get(f"cpt_{cpt_type}", [])
+    
+    if cpts:
+        st.subheader(f"📊 {cpt_type.title()}s Overview ({len(cpts)} total)")
         
+        cpt_rows = []
+        for p in cpts:
+            if not isinstance(p, dict): continue
+            desc = p.get("content") or ""
+            if isinstance(desc, dict):
+                desc = desc.get("rendered", "")
+            desc_preview = str(desc)[:50] + "..." if desc else ""
+            
+            cpt_rows.append({
+                "ID": p.get("id"),
+                "Title": extract_title(p),
+                "Status": p.get("status") or "",
+                "Date": p.get("date") or "",
+                "Content Preview": desc_preview
+            })
+        
+        df_cpt = pd.DataFrame(cpt_rows)
+        st.dataframe(df_cpt, use_container_width=True, height=400)
+        
+        col1, col2 = st.columns(2)
         with col1:
-            db_host = st.text_input("DB Host", "localhost")
-            db_user = st.text_input("DB User", "root")
-            db_password = st.text_input("DB Password", type="password")
+            download_json(cpts, f"wp_{cpt_type}s.json", label=f"⬇️ Download {cpt_type.title()}s JSON")
         
         with col2:
-            db_name = st.text_input("Database Name", "wordpress")
-            db_port = st.number_input("DB Port", value=3306, min_value=1, max_value=65535)
-            db_table_prefix = st.text_input("Table Prefix", "wp_")
+            csv_cpt = df_cpt.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label=f"⬇️ Download {cpt_type.title()}s CSV",
+                data=csv_cpt,
+                file_name=f"wp_{cpt_type}s.csv",
+                mime="text/csv"
+            )
 
-        if st.button("🔌 Test DB Connection"):
-            try:
-                con = pymysql.connect(
-                    host=db_host, user=db_user, password=db_password,
-                    db=db_name, port=int(db_port), connect_timeout=5
-                )
-                st.success("✅ Connected successfully!")
-                
-                with con.cursor() as cursor:
-                    cursor.execute("SHOW TABLES")
-                    tables = [row[0] for row in cursor.fetchall()]
-                    st.info(f"Found {len(tables)} tables in database.")
-                    with st.expander("View Tables"):
-                        st.write(tables)
-                
-                con.close()
-            except Exception as e:
-                st.error(f"❌ Connection failed: {e}")
+    # Create New CPT
+    st.markdown("---")
+    st.subheader(f"➕ Create New {cpt_type.title()}")
+    
+    with st.form(f"create_cpt_form_{cpt_type}"):
+        new_cpt_title = st.text_input(f"{cpt_type.title()} Title *", placeholder=f"Enter {cpt_type} title")
+        new_cpt_content = st.text_area("Content", placeholder=f"{cpt_type.title()} content (optional)", height=200)
+        new_cpt_status = st.selectbox("Status", ["publish", "draft", "pending", "private"], index=0)
         
-        st.markdown("---")
-        st.subheader("📤 Export Project Manager Data")
+        create_cpt_btn = st.form_submit_button(f"➕ Create {cpt_type.title()}", type="primary", use_container_width=True)
         
-        if st.button("Export PM Tables to JSON"):
-            try:
-                con = pymysql.connect(
-                    host=db_host, user=db_user, password=db_password,
-                    db=db_name, port=int(db_port)
-                )
-                
-                export_data = {}
-                pm_tables = [
-                    f"{db_table_prefix}pm_projects",
-                    f"{db_table_prefix}pm_task_lists",
-                    f"{db_table_prefix}pm_tasks"
-                ]
-                
-                with con.cursor(pymysql.cursors.DictCursor) as cursor:
-                    for table in pm_tables:
-                        try:
-                            cursor.execute(f"SELECT * FROM {table}")
-                            export_data[table] = cursor.fetchall()
-                            st.success(f"✅ Exported {len(export_data[table])} rows from {table}")
-                        except Exception as e:
-                            st.warning(f"⚠️ Could not export {table}: {e}")
-                
-                con.close()
-                
-                if export_data:
-                    download_json(export_data, "pm_database_export.json", label="⬇️ Download Database Export")
-                
-            except Exception as e:
-                st.error(f"❌ Export failed: {e}")
+        if create_cpt_btn:
+            if not new_cpt_title or new_cpt_title.strip() == "":
+                st.error(f"❌ {cpt_type.title()} title is required!")
+            else:
+                payload = {
+                    "title": new_cpt_title.strip(),
+                    "content": new_cpt_content,
+                    "status": new_cpt_status,
+                }
+                with st.spinner(f"Creating {cpt_type}..."):
+                    res = wp_post_json(cpt_url, payload)
+                    if res:
+                        st.success(f"✅ {cpt_type.title()} created successfully! ID: {res.get(\'id\')}")
+                        if show_raw_json:
+                            st.json(res)
+                        time.sleep(1)
+                        st.rerun()
+
+    # Bulk Import CPTs
+    st.markdown("---")
+    st.subheader(f"📥 Bulk Import/Update {cpt_type.title()}s")
+    
+    uploaded_cpt_file = st.file_uploader(
+        f"Upload {cpt_type.title()}s CSV/JSON", 
+        type=["csv", "json"], 
+        key=f"upload_cpt_bulk_{cpt_type}",
+        help="Upload a file with CPT data. Include \'id\' column for updates."
+    )
+    
+    if uploaded_cpt_file:
+        file_ext = uploaded_cpt_file.name.split(".")[-1].lower()
+        
+        if file_ext == "json":
+            cpt_import_data = json.load(uploaded_cpt_file)
+            if isinstance(cpt_import_data, dict):
+                cpt_import_data = [cpt_import_data]
+        else:
+            df_cpt_import = pd.read_csv(uploaded_cpt_file)
+            cpt_import_data = df_cpt_import.to_dict(\'records\')
+        
+        st.write(f"**Preview** ({len(cpt_import_data)} items):")
+        st.dataframe(pd.DataFrame(cpt_import_data).head(10), use_container_width=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            cpt_import_mode = st.radio(
+                "Import Mode",
+                ["Create New Only", "Update Existing Only", "Smart (Create + Update)"],
+                key=f"cpt_import_mode_{cpt_type}"
+            )
+        with col2:
+            cpt_test_import = st.checkbox("Test with first item", value=True, key=f"test_cpt_import_{cpt_type}")
+        
+        with st.expander("⚙️ Field Selection & Options"):
+            available_cpt_fields = list(cpt_import_data[0].keys()) if cpt_import_data else []
+            default_cpt_fields = ["title", "content", "status", "date"]
+            
+            selected_cpt_fields = st.multiselect(
+                "Fields to include:",
+                options=available_cpt_fields,
+                default=[f for f in default_cpt_fields if f in available_cpt_fields],
+                key=f"selected_cpt_fields_{cpt_type}"
+            )
+
+        import_cpt_btn = st.button(f"🚀 Start {cpt_type.title()} Import", type="primary", use_container_width=True, key=f"start_cpt_import_{cpt_type}")
+        
+        if import_cpt_btn:
+            if not cpt_import_data:
+                st.error(f"No {cpt_type} data to import.")
+            else:
+                with st.spinner(f"Importing {cpt_type}s..."):
+                    success_count = 0
+                    for idx, item in enumerate(cpt_import_data):
+                        if cpt_test_import and idx > 0:
+                            st.info("Test mode: Only processed the first item.")
+                            break
+                        
+                        payload = clean_payload(item, selected_cpt_fields, exclude_id=False)
+                        
+                        item_id = payload.get("id")
+                        
+                        if cpt_import_mode == "Create New Only" or (cpt_import_mode == "Smart (Create + Update)" and not item_id):
+                            if "id" in payload: del payload["id"]
+                            res = wp_post_json(cpt_url, payload)
+                            if res: success_count += 1
+                        elif cpt_import_mode == "Update Existing Only" or (cpt_import_mode == "Smart (Create + Update)" and item_id):
+                            if item_id:
+                                res = wp_put_json(f"{cpt_url}/{item_id}", payload)
+                                if res: success_count += 1
+                            else:
+                                st.warning(f"Skipping item {idx+1}: No ID found for update in \'{item.get(\'title\', \'N/A\')}\'.")
+                        
+                        time.sleep(0.1) # Be nice to the API
+                    
+                    st.success(f"✅ Successfully imported/updated {success_count} {cpt_type}s.")
+                    st.session_state[f"cpt_{cpt_type}"] = [] # Clear cache to refetch
+                    st.rerun()
 
 # -------------------------------------
-# Footer
+# TAB 4: DB EXPORT/IMPORT (Optional)
 # -------------------------------------
-st.markdown("---")
-st.caption("🚀 Developed for WordPress REST API exploration — supports WP Project Manager and all custom post types. Handles App Password authentication safely.")
+with tab4:
+    st.header("🗄️ Database Export/Import (Requires PyMySQL)")
+    
+    if not HAS_PYMYSQL:
+        st.warning("PyMySQL is not installed. Please install it (`pip install pymysql`) to use this feature.")
+    else:
+        st.info("This section is for advanced users to directly interact with the WordPress database.")
+        st.markdown("**Use with caution!** Direct DB operations can bypass WordPress logic and cause data inconsistencies.")
+        
+        db_host = st.text_input("DB Host", "localhost")
+        db_user = st.text_input("DB User", "root")
+        db_password = st.text_input("DB Password", type="password")
+        db_name = st.text_input("DB Name", "wordpress")
+        
+        db_connection = None
+        try:
+            db_connection = pymysql.connect(host=db_host, user=db_user, password=db_password, database=db_name)
+            st.success("Connected to database!")
+        except Exception as e:
+            st.error(f"Could not connect to database: {e}")
+            db_connection = None
+
+        if db_connection:
+            st.subheader("Export Data")
+            export_table = st.text_input("Table to Export", "wp_posts")
+            if st.button("Export Table to CSV"):
+                try:
+                    with db_connection.cursor() as cursor:
+                        cursor.execute(f"SELECT * FROM {export_table}")
+                        result = cursor.fetchall()
+                        columns = [desc[0] for desc in cursor.description]
+                        df_db = pd.DataFrame(result, columns=columns)
+                        csv_db = df_db.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label=f"⬇️ Download {export_table} CSV",
+                            data=csv_db,
+                            file_name=f"{export_table}.csv",
+                            mime="text/csv"
+                        )
+                        st.success(f"Exported {len(result)} rows from {export_table}.")
+                except Exception as e:
+                    st.error(f"Error exporting data: {e}")
+
+            st.subheader("Import Data")
+            uploaded_db_file = st.file_uploader("Upload CSV to Import", type=["csv"], key="upload_db_import")
+            import_table = st.text_input("Table to Import Into", "wp_posts_new")
+            
+            if uploaded_db_file and import_table:
+                df_import_db = pd.read_csv(uploaded_db_file)
+                st.write("Preview of data to import:")
+                st.dataframe(df_import_db.head())
+                
+                if st.button("Import Data to DB"):
+                    try:
+                        with db_connection.cursor() as cursor:
+                            # Create table if not exists (simple schema from DataFrame)
+                            columns_sql = ", ".join([f"`{col}` TEXT" for col in df_import_db.columns])
+                            create_table_sql = f"CREATE TABLE IF NOT EXISTS `{import_table}` ({columns_sql})"
+                            cursor.execute(create_table_sql)
+                            
+                            # Insert data
+                            for index, row in df_import_db.iterrows():
+                                cols = ", ".join([f"`{col}`" for col in df_import_db.columns])
+                                vals = ", ".join(["%s" for _ in df_import_db.columns])
+                                insert_sql = f"INSERT INTO `{import_table}` ({cols}) VALUES ({vals})"
+                                cursor.execute(insert_sql, tuple(row.values))
+                            db_connection.commit()
+                            st.success(f"Successfully imported {len(df_import_db)} rows into {import_table}.")
+                    except Exception as e:
+                        st.error(f"Error importing data: {e}")
+
+        if db_connection:
+            db_connection.close()
+
+
+
