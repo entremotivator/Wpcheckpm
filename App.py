@@ -92,7 +92,8 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         res = requests.post(url, headers=headers, auth=auth, json=data, timeout=30)
         res.raise_for_status()
         json_response = res.json()
-        # The API might return the actual object directly or nested under a \'data\' key       if isinstance(json_response, dict) and 'data' in json_response:
+        # The API might return the actual object directly or nested under a 'data' key
+        if isinstance(json_response, dict) and 'data' in json_response:
             # If 'data' is a dictionary, return it
             if isinstance(json_response['data'], dict):
                 return json_response['data']
