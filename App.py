@@ -91,13 +91,22 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
     try:
         res = requests.post(url, headers=headers, auth=auth, json=data, timeout=30)
         res.raise_for_status()
-        return res.json()
+        json_response = res.json()
+        # The API might return the actual object directly or nested under a \'data\' key       if isinstance(json_response, dict) and 'data' in json_response:
+            # If 'data' is a dictionary, return it
+            if isinstance(json_response['data'], dict):
+                return json_response['data']
+            # If 'data' is a list, it might contain the created item, try to get the first one
+            elif isinstance(json_response['data'], list) and json_response['data']:
+                return json_response['data'][0]
+        # Otherwise, return the response directly
+        return json_response
     except requests.HTTPError as e:
         try:
             error_data = res.json()
-            st.error(f"POST failed: {error_data.get('message', str(e))}")
+            st.error(f"POST failed: {error_data.get(\'message\', str(e))}")
         except:
-            st.error(f"POST failed: {e}\n{res.text}")
+            st.error(f"POST failed: {e}\\n{res.text}")
         return None
     except Exception as e:
         st.error(f"POST failed: {e}")
@@ -636,7 +645,9 @@ with tab2:
                                 
                                 # Create task list via API
                                 result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
-                                if result:
+                                st.write("API Response for Task List Creation:")
+                                st.json(result)
+                                if result and isinstance(result, dict):
                                     tasklist_id = result.get('id')
                                     tasklist_mapping[row['title']] = tasklist_id
                                     import_results["tasklists"].append({
