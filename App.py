@@ -613,6 +613,25 @@ with tab2:
                     tasklist_df = df[df['type'] == 'tasklist'].copy()
                     task_df = df[df['type'] == 'task'].copy()
                     
+                    # Debug: Show what we're working with
+                    st.write("### 🔍 DEBUG: CSV Data Analysis")
+                    st.write(f"**Total Task Lists in CSV:** {len(tasklist_df)}")
+                    st.write(f"**Total Tasks in CSV:** {len(task_df)}")
+                    
+                    if len(tasklist_df) > 0:
+                        st.write("**Task List Titles:**")
+                        for idx, row in tasklist_df.iterrows():
+                            st.write(f"  - '{row['title']}'")
+                    
+                    if len(task_df) > 0 and 'task_list_name' in task_df.columns:
+                        st.write("**Unique task_list_name values in tasks:**")
+                        unique_list_names = task_df['task_list_name'].dropna().unique()
+                        for name in unique_list_names:
+                            count = len(task_df[task_df['task_list_name'] == name])
+                            st.write(f"  - '{name}' ({count} tasks)")
+                    
+                    st.markdown("---")
+                    
                     # NEW LOGIC: Process each task list with its tasks sequentially
                     st.markdown("#### 📑 Processing Task Lists with Associated Tasks...")
                     
@@ -649,11 +668,17 @@ with tab2:
                                             
                                             # Step 2: Create all tasks for this task list
                                             if import_tasks:
-                                                # Filter tasks that belong to this task list
-                                                related_tasks = task_df[
-                                                    (task_df['task_list_name'].notna()) & 
-                                                    (task_df['task_list_name'].str.strip() == tasklist_title)
-                                                ]
+                                                # Filter tasks that belong to this task list - normalize both sides for comparison
+                                                tasklist_title_normalized = tasklist_title.strip().lower()
+                                                
+                                                # Create a boolean mask for matching
+                                                mask = task_df['task_list_name'].apply(
+                                                    lambda x: str(x).strip().lower() == tasklist_title_normalized if pd.notna(x) else False
+                                                )
+                                                related_tasks = task_df[mask]
+                                                
+                                                st.write(f"🔍 DEBUG: Looking for tasks with list name '{tasklist_title}' (normalized: '{tasklist_title_normalized}')")
+                                                st.write(f"🔍 DEBUG: Available task_list_names in CSV: {task_df['task_list_name'].dropna().unique().tolist()}")
                                                 
                                                 if len(related_tasks) > 0:
                                                     st.info(f"📝 Found {len(related_tasks)} tasks for this list")
@@ -743,9 +768,13 @@ with tab2:
                     
                     # Handle orphaned tasks (tasks without a task_list_name or with non-existent list)
                     if import_tasks:
+                        # Get all task list titles that were created (normalized for comparison)
+                        created_tasklist_titles = [str(row['title']).strip().lower() for idx, row in tasklist_df.iterrows()]
+                        
+                        # Find orphaned tasks
                         orphaned_tasks = task_df[
                             task_df['task_list_name'].isna() | 
-                            ~task_df['task_list_name'].str.strip().isin(tasklist_df['title'].str.strip())
+                            ~task_df['task_list_name'].apply(lambda x: str(x).strip().lower() if pd.notna(x) else '').isin(created_tasklist_titles)
                         ]
                         
                         if len(orphaned_tasks) > 0:
