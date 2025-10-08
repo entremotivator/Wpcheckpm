@@ -664,29 +664,31 @@ with tab2:
                         for idx, row in task_df.iterrows():
                             try:
                                 task_list_id = None
+                                task_list_name = str(row.get('task_list_name', '')).strip() if pd.notna(row.get('task_list_name')) else ''
                                 
                                 # Priority 1: Check for explicit task_list_id in CSV
                                 if pd.notna(row.get('task_list_id')) and str(row.get('task_list_id')).strip():
-                                    task_list_id = int(row['task_list_id'])
-                                    st.info(f"🔗 Using explicit task_list_id {task_list_id} for task '{row['title']}'")
+                                    try:
+                                        task_list_id = int(row['task_list_id'])
+                                        st.info(f"🔗 Using explicit task_list_id {task_list_id} for task '{row['title']}'")
+                                    except (ValueError, TypeError):
+                                        st.warning(f"⚠️ Invalid task_list_id format for task '{row['title']}', will try by name")
                                 
                                 # Priority 2: Check task_list_name in recently created mapping
-                                if not task_list_id:
-                                    task_list_name = str(row.get('task_list_name', '')).strip() if pd.notna(row.get('task_list_name')) else ''
-                                    if task_list_name and task_list_name in tasklist_mapping:
+                                if not task_list_id and task_list_name:
+                                    if task_list_name in tasklist_mapping:
                                         task_list_id = tasklist_mapping[task_list_name]
                                         st.info(f"🔗 Linking task '{row['title']}' to recently created task list '{task_list_name}' (ID: {task_list_id})")
+                                    else:
+                                        # Priority 3: Search existing task lists by name
+                                        existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
+                                        for tl in existing_tasklists:
+                                            if str(tl.get('title', '')).strip() == task_list_name:
+                                                task_list_id = tl.get('id')
+                                                st.info(f"🔗 Found existing task list '{task_list_name}' (ID: {task_list_id}) for task '{row['title']}'")
+                                                break
                                 
-                                # Priority 3: Search existing task lists by name
-                                if not task_list_id and task_list_name:
-                                    existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
-                                    for tl in existing_tasklists:
-                                        if str(tl.get('title', '')).strip() == task_list_name:
-                                            task_list_id = tl.get('id')
-                                            st.info(f"🔗 Found existing task list '{task_list_name}' (ID: {task_list_id}) for task '{row['title']}'")
-                                            break
-                                
-                                # If still no task list found, warn but continue
+                                # Final check: warn if task list name was provided but not found
                                 if not task_list_id and task_list_name:
                                     st.warning(f"⚠️ Task list '{task_list_name}' not found for task '{row['title']}'. Task will be created without a task list.")
                                 
