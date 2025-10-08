@@ -609,139 +609,193 @@ with tab2:
                     
                     import_results = {"tasklists": [], "tasks": [], "errors": []}
                     
-                    # Step 1: Import Task Lists
-                    if import_tasklists:
-                        st.markdown("#### 📑 Importing Task Lists...")
-                        tasklist_df = df[df['type'] == 'tasklist'].copy()
-                        tasklist_mapping = {}
+                    # Get task lists and tasks from CSV
+                    tasklist_df = df[df['type'] == 'tasklist'].copy()
+                    task_df = df[df['type'] == 'task'].copy()
+                    
+                    # NEW LOGIC: Process each task list with its tasks sequentially
+                    st.markdown("#### 📑 Processing Task Lists with Associated Tasks...")
+                    
+                    overall_progress = st.progress(0)
+                    total_tasklists = len(tasklist_df)
+                    
+                    for tl_idx, tl_row in tasklist_df.iterrows():
+                        try:
+                            tasklist_title = tl_row['title']
+                            st.markdown(f"##### 📂 Processing Task List: **{tasklist_title}**")
+                            
+                            # Step 1: Create the task list
+                            if import_tasklists:
+                                with st.spinner(f"Creating task list '{tasklist_title}'..."):
+                                    tasklist_payload = {
+                                        "title": tasklist_title,
+                                        "description": tl_row.get('description', ''),
+                                        "project_id": target_project_id,
+                                        "order": tl_row.get('order', 1),
+                                        "status": tl_row.get('status', 'incomplete')
+                                    }
+                                    
+                                    result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
+                                    
+                                    if result and isinstance(result, dict):
+                                        tasklist_id = result.get("id")
+                                        if tasklist_id:
+                                            import_results["tasklists"].append({
+                                                "title": tasklist_title,
+                                                "id": tasklist_id,
+                                                "status": "success"
+                                            })
+                                            st.success(f"✅ Created task list: {tasklist_title} (ID: {tasklist_id})")
+                                            
+                                            # Step 2: Create all tasks for this task list
+                                            if import_tasks:
+                                                # Filter tasks that belong to this task list
+                                                related_tasks = task_df[
+                                                    (task_df['task_list_name'].notna()) & 
+                                                    (task_df['task_list_name'].str.strip() == tasklist_title)
+                                                ]
+                                                
+                                                if len(related_tasks) > 0:
+                                                    st.info(f"📝 Found {len(related_tasks)} tasks for this list")
+                                                    
+                                                    task_progress = st.progress(0)
+                                                    for task_idx, task_row in related_tasks.iterrows():
+                                                        try:
+                                                            task_payload = {
+                                                                "title": str(task_row["title"]) if pd.notna(task_row.get("title")) else "",
+                                                                "description": str(task_row.get("description", "")) if pd.notna(task_row.get("description")) else "",
+                                                                "project_id": target_project_id,
+                                                                "task_list_id": tasklist_id,  # Link to the task list we just created
+                                                                "order": int(task_row.get("order", 1)) if pd.notna(task_row.get("order")) else 1,
+                                                                "status": str(task_row.get("status", "incomplete")) if pd.notna(task_row.get("status")) else "incomplete",
+                                                                "complexity": str(task_row.get("complexity", "basic")) if pd.notna(task_row.get("complexity")) else "basic",
+                                                                "priority": str(task_row.get("priority", "medium")) if pd.notna(task_row.get("priority")) else "medium"
+                                                            }
+                                                            
+                                                            # Handle dates
+                                                            start_at_val = task_row.get('start_at')
+                                                            if pd.isna(start_at_val) or start_at_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                                                task_payload["start_at"] = None
+                                                            else:
+                                                                task_payload["start_at"] = start_at_val
+                                                            
+                                                            due_date_val = task_row.get('due_date')
+                                                            if pd.isna(due_date_val) or due_date_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                                                task_payload["due_date"] = None
+                                                            else:
+                                                                task_payload["due_date"] = due_date_val
+                                                            
+                                                            # Create task
+                                                            task_result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
+                                                            if task_result:
+                                                                task_id = task_result.get('id')
+                                                                import_results["tasks"].append({
+                                                                    "title": task_row['title'],
+                                                                    "id": task_id,
+                                                                    "task_list": tasklist_title,
+                                                                    "task_list_id": tasklist_id,
+                                                                    "status": "success"
+                                                                })
+                                                                st.success(f"  ✅ Created task: {task_row['title']} (ID: {task_id})")
+                                                            else:
+                                                                error_msg = f"Failed to create task: {task_row['title']} in list '{tasklist_title}'"
+                                                                import_results["errors"].append(error_msg)
+                                                                st.error(f"  ❌ {error_msg}")
+                                                            
+                                                            # Update task progress
+                                                            task_progress.progress((task_idx + 1) / len(related_tasks))
+                                                            time.sleep(0.1)
+                                                            
+                                                        except Exception as e:
+                                                            error_msg = f"Error creating task '{task_row['title']}': {str(e)}"
+                                                            import_results["errors"].append(error_msg)
+                                                            st.error(f"  ❌ {error_msg}")
+                                                    
+                                                    task_progress.empty()
+                                                else:
+                                                    st.info(f"ℹ️ No tasks found for task list '{tasklist_title}'")
+                                        else:
+                                            error_msg = f"Failed to retrieve ID for task list: {tasklist_title}"
+                                            import_results["errors"].append(error_msg)
+                                            st.error(f"❌ {error_msg}")
+                                    else:
+                                        error_msg = f"Failed to create task list: {tasklist_title}"
+                                        import_results["errors"].append(error_msg)
+                                        st.error(f"❌ {error_msg}")
+                            
+                            # Update overall progress
+                            overall_progress.progress((tl_idx + 1) / total_tasklists)
+                            st.markdown("---")
+                            
+                        except Exception as e:
+                            error_msg = f"Error processing task list '{tl_row['title']}': {str(e)}"
+                            import_results["errors"].append(error_msg)
+                            st.error(f"❌ {error_msg}")
+                    
+                    overall_progress.empty()
+                    
+                    # Handle orphaned tasks (tasks without a task_list_name or with non-existent list)
+                    if import_tasks:
+                        orphaned_tasks = task_df[
+                            task_df['task_list_name'].isna() | 
+                            ~task_df['task_list_name'].str.strip().isin(tasklist_df['title'].str.strip())
+                        ]
                         
-                        progress_bar = st.progress(0)
-                        for idx, row in tasklist_df.iterrows():
-                            try:
-                                tasklist_payload = {
-                                    "title": row['title'],
-                                    "description": row.get('description', ''),
-                                    "project_id": target_project_id,
-                                    "order": row.get('order', 1),
-                                    "status": row.get('status', 'incomplete')
-                                }
-                                
-                                result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
-                                
-                                if result and isinstance(result, dict):
-                                    tasklist_id = result.get("id")
-                                    if tasklist_id:
-                                        tasklist_mapping[row["title"]] = tasklist_id
-                                        import_results["tasklists"].append({
-                                            "title": row["title"],
-                                            "id": tasklist_id,
+                        if len(orphaned_tasks) > 0:
+                            st.markdown("#### 📝 Processing Orphaned Tasks (No Task List)")
+                            st.info(f"Found {len(orphaned_tasks)} tasks without a valid task list assignment")
+                            
+                            orphan_progress = st.progress(0)
+                            for idx, task_row in orphaned_tasks.iterrows():
+                                try:
+                                    task_payload = {
+                                        "title": str(task_row["title"]) if pd.notna(task_row.get("title")) else "",
+                                        "description": str(task_row.get("description", "")) if pd.notna(task_row.get("description")) else "",
+                                        "project_id": target_project_id,
+                                        "order": int(task_row.get("order", 1)) if pd.notna(task_row.get("order")) else 1,
+                                        "status": str(task_row.get("status", "incomplete")) if pd.notna(task_row.get("status")) else "incomplete",
+                                        "complexity": str(task_row.get("complexity", "basic")) if pd.notna(task_row.get("complexity")) else "basic",
+                                        "priority": str(task_row.get("priority", "medium")) if pd.notna(task_row.get("priority")) else "medium"
+                                    }
+                                    
+                                    # Handle dates
+                                    start_at_val = task_row.get('start_at')
+                                    if pd.isna(start_at_val) or start_at_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                        task_payload["start_at"] = None
+                                    else:
+                                        task_payload["start_at"] = start_at_val
+                                    
+                                    due_date_val = task_row.get('due_date')
+                                    if pd.isna(due_date_val) or due_date_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
+                                        task_payload["due_date"] = None
+                                    else:
+                                        task_payload["due_date"] = due_date_val
+                                    
+                                    # Create orphaned task
+                                    task_result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
+                                    if task_result:
+                                        task_id = task_result.get('id')
+                                        import_results["tasks"].append({
+                                            "title": task_row['title'],
+                                            "id": task_id,
+                                            "task_list": None,
                                             "status": "success"
                                         })
-                                        st.success(f"✅ Created task list: {row['title']} (ID: {tasklist_id})")
+                                        st.success(f"✅ Created orphaned task: {task_row['title']} (ID: {task_id})")
                                     else:
-                                        import_results["errors"].append(f"Failed to retrieve ID for task list: {row['title']}")
-                                        st.error(f"❌ Failed to retrieve ID for task list: {row['title']}")
-                                else:
-                                    import_results["errors"].append(f"Failed to create task list: {row['title']}")
-                                    st.error(f"❌ Failed to create task list: {row['title']}")
-                                
-                                progress_bar.progress((idx + 1) / len(tasklist_df))
-                                time.sleep(0.1)
-                                
-                            except Exception as e:
-                                error_msg = f"Error creating task list '{row['title']}': {str(e)}"
-                                import_results["errors"].append(error_msg)
-                                st.error(f"❌ {error_msg}")
-                        
-                        progress_bar.empty()
-                    
-                    # Step 2: Import Tasks
-                    if import_tasks:
-                        st.markdown("#### ✅ Importing Tasks...")
-                        task_df = df[df['type'] == 'task'].copy()
-                        
-                        progress_bar = st.progress(0)
-                        for idx, row in task_df.iterrows():
-                            try:
-                                task_list_id = None
-                                task_list_name = str(row.get('task_list_name', '')).strip() if pd.notna(row.get('task_list_name')) else ''
-                                
-                                # Priority 1: Check for explicit task_list_id in CSV
-                                if pd.notna(row.get('task_list_id')) and str(row.get('task_list_id')).strip():
-                                    try:
-                                        task_list_id = int(row['task_list_id'])
-                                        st.info(f"🔗 Using explicit task_list_id {task_list_id} for task '{row['title']}'")
-                                    except (ValueError, TypeError):
-                                        st.warning(f"⚠️ Invalid task_list_id format for task '{row['title']}', will try by name")
-                                
-                                # Priority 2: Check task_list_name in recently created mapping
-                                if not task_list_id and task_list_name:
-                                    if task_list_name in tasklist_mapping:
-                                        task_list_id = tasklist_mapping[task_list_name]
-                                        st.info(f"🔗 Linking task '{row['title']}' to recently created task list '{task_list_name}' (ID: {task_list_id})")
-                                    else:
-                                        # Priority 3: Search existing task lists by name
-                                        existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
-                                        for tl in existing_tasklists:
-                                            if str(tl.get('title', '')).strip() == task_list_name:
-                                                task_list_id = tl.get('id')
-                                                st.info(f"🔗 Found existing task list '{task_list_name}' (ID: {task_list_id}) for task '{row['title']}'")
-                                                break
-                                
-                                # Final check: warn if task list name was provided but not found
-                                if not task_list_id and task_list_name:
-                                    st.warning(f"⚠️ Task list '{task_list_name}' not found for task '{row['title']}'. Task will be created without a task list.")
-                                
-                                task_payload = {
-                                    "title": str(row["title"]) if pd.notna(row.get("title")) else "",
-                                    "description": str(row.get("description", "")) if pd.notna(row.get("description")) else "",
-                                    "project_id": target_project_id,
-                                    "order": int(row.get("order", 1)) if pd.notna(row.get("order")) else 1,
-                                    "status": str(row.get("status", "incomplete")) if pd.notna(row.get("status")) else "incomplete",
-                                    "complexity": str(row.get("complexity", "basic")) if pd.notna(row.get("complexity")) else "basic",
-                                    "priority": str(row.get("priority", "medium")) if pd.notna(row.get("priority")) else "medium"
-                                }
-                                
-                                if task_list_id:
-                                    task_payload["task_list_id"] = task_list_id
-                                
-                                # Handle dates if present
-                                start_at_val = row.get('start_at')
-                                if pd.isna(start_at_val) or start_at_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
-                                    task_payload["start_at"] = None
-                                else:
-                                    task_payload["start_at"] = start_at_val
-                                
-                                due_date_val = row.get('due_date')
-                                if pd.isna(due_date_val) or due_date_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
-                                    task_payload["due_date"] = None
-                                else:
-                                    task_payload["due_date"] = due_date_val
-                                
-                                # Create task via API
-                                result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
-                                if result:
-                                    task_id = result.get('id')
-                                    import_results["tasks"].append({
-                                        "title": row['title'],
-                                        "id": task_id,
-                                        "task_list": task_list_name if 'task_list_name' in locals() else None,
-                                        "status": "success"
-                                    })
-                                    st.success(f"✅ Created task: {row['title']} (ID: {task_id})")
-                                else:
-                                    import_results["errors"].append(f"Failed to create task: {row['title']}")
-                                    st.error(f"❌ Failed to create task: {row['title']}")
-                                
-                                progress_bar.progress((idx + 1) / len(task_df))
-                                time.sleep(0.1)
-                                
-                            except Exception as e:
-                                error_msg = f"Error creating task '{row['title']}': {str(e)}"
-                                import_results["errors"].append(error_msg)
-                                st.error(f"❌ {error_msg}")
-                        
-                        progress_bar.empty()
+                                        error_msg = f"Failed to create orphaned task: {task_row['title']}"
+                                        import_results["errors"].append(error_msg)
+                                        st.error(f"❌ {error_msg}")
+                                    
+                                    orphan_progress.progress((idx + 1) / len(orphaned_tasks))
+                                    time.sleep(0.1)
+                                    
+                                except Exception as e:
+                                    error_msg = f"Error creating orphaned task '{task_row['title']}': {str(e)}"
+                                    import_results["errors"].append(error_msg)
+                                    st.error(f"❌ {error_msg}")
+                            
+                            orphan_progress.empty()
                     
                     # Import Summary
                     st.markdown("---")
