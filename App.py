@@ -94,23 +94,20 @@ def wp_post_json(url: str, data: Dict[str, Any]) -> Optional[Any]:
         json_response = res.json()
         # The API might return the actual object directly or nested under a 'data' key
         if isinstance(json_response, dict):
-            if 'id' in json_response: # If 'id' is directly in the top-level response, return the whole response
+            if 'id' in json_response:
                 return json_response
             elif 'data' in json_response:
-                # If 'data' is a dictionary, return it
                 if isinstance(json_response['data'], dict):
                     return json_response['data']
-                # If 'data' is a list, it might contain the created item, try to get the first one
                 elif isinstance(json_response['data'], list) and json_response['data']:
                     return json_response['data'][0]
-        # If no 'id' or 'data' key, or not a dict, return the response directly
         return json_response
     except requests.HTTPError as e:
         try:
             error_data = res.json()
             st.error(f"POST failed: {error_data.get('message', str(e))}")
         except:
-            st.error(f"POST failed: {e}\\n{res.text}")
+            st.error(f"POST failed: {e}\n{res.text}")
         return None
     except Exception as e:
         st.error(f"POST failed: {e}")
@@ -183,23 +180,20 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
             break
             
         if isinstance(data, list):
-            items = [item for item in data if isinstance(item, dict)] # Ensure only dicts are added
+            items = [item for item in data if isinstance(item, dict)]
             all_items.extend(items)
-            if len(items) < params.get("per_page", 100): # Use params.get for per_page
+            if len(items) < params.get("per_page", 100):
                 break
         elif isinstance(data, dict):
-            # Some endpoints return a single object with a 'data' key, or just the object itself
             if "data" in data and isinstance(data["data"], list):
-                items = [item for item in data["data"] if isinstance(item, dict)] # Ensure only dicts are added
+                items = [item for item in data["data"] if isinstance(item, dict)]
                 all_items.extend(items)
-                # If the 'data' key contains a list, and its length is less than per_page, it's the last page
                 if len(items) < params.get("per_page", 100):
                     break
             elif "data" in data and isinstance(data["data"], dict):
                 all_items.append(data["data"])
                 break
             else:
-                # If it's a dictionary but not paginated or has a 'data' key, assume it's a single item
                 all_items.append(data)
                 break
         else:
@@ -211,14 +205,10 @@ def fetch_all_pages(base_url: str, params: Dict[str, Any] = None) -> List[dict]:
     return all_items
 
 def fetch_project_tasks(project_id, projects_url, wp_base, api_ns, fetch_all_pages):
-    task_lists_1 = fetch_all_pages(f"{projects_url}/{project_id}/task-lists")
-    task_lists_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/projects/{project_id}/task-lists")
-    task_lists = (task_lists_1 or []) + (task_lists_2 or [])
-    
-    tasks_1 = fetch_all_pages(f"{projects_url}/{project_id}/tasks")
-    tasks_2 = fetch_all_pages(f"{wp_base}/wp-json/{api_ns}/task-lists/{project_id}/tasks")
-    tasks = (tasks_1 or []) + (tasks_2 or [])
-    return task_lists, tasks
+    """Fetch task lists and tasks for a specific project."""
+    task_lists = fetch_all_pages(f"{projects_url}/{project_id}/task-lists")
+    tasks = fetch_all_pages(f"{projects_url}/{project_id}/tasks")
+    return task_lists or [], tasks or []
 
 # -------------------------------------
 # Tabs
@@ -233,10 +223,10 @@ with tab1:
     
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        fetch_btn = st.button("🔄 Fetch All Projects", width='stretch')
+        fetch_btn = st.button("🔄 Fetch All Projects", key="fetch_projects_btn")
     with col2:
         if st.session_state.get("projects"):
-            clear_btn = st.button("🗑️ Clear", width='stretch')
+            clear_btn = st.button("🗑️ Clear")
             if clear_btn:
                 st.session_state["projects"] = []
                 st.rerun()
@@ -301,7 +291,7 @@ with tab1:
             })
         
         df = pd.DataFrame(rows)
-        st.dataframe(df, width='stretch', height=400)
+        st.dataframe(df, use_container_width=True, height=400)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -328,13 +318,12 @@ with tab1:
         with col1:
             project_id = st.text_input("Enter Project ID to Edit", key="edit_project_id")
         with col2:
-            load_btn = st.button("📥 Load Project", width='stretch')
+            load_btn = st.button("📥 Load Project")
         
         if load_btn and project_id:
             with st.spinner("Loading project..."):
                 proj = wp_get_json(f"{projects_url}/{project_id}")
                 if proj:
-                    # Handle nested data structure
                     if isinstance(proj, dict) and "data" in proj:
                         proj = proj["data"]
                     st.session_state["edit_project"] = proj
@@ -357,9 +346,9 @@ with tab1:
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    save_btn = st.form_submit_button("💾 Save Changes", width='stretch')
+                    save_btn = st.form_submit_button("💾 Save Changes")
                 with col2:
-                    delete_btn = st.form_submit_button("🗑️ Delete Project", width='stretch')
+                    delete_btn = st.form_submit_button("🗑️ Delete Project")
                 
                 if save_btn:
                     payload = {"title": new_title, "status": new_status, "description": new_desc}
@@ -390,7 +379,7 @@ with tab1:
             create_status = st.selectbox("Status", ["incomplete", "active", "pending", "completed"], key="create_status")
             create_desc = st.text_area("Description", key="create_desc", height=150)
             
-            if st.form_submit_button("➕ Create Project", width='stretch'):
+            if st.form_submit_button("➕ Create Project"):
                 if create_title:
                     payload = {
                         "title": create_title,
@@ -411,7 +400,7 @@ with tab1:
         with col1:
             clone_id = st.text_input("Enter Project ID to Clone", key="clone_id")
         with col2:
-            clone_btn = st.button("📋 Clone", width='stretch')
+            clone_btn = st.button("📋 Clone")
         
         if clone_btn and clone_id:
             with st.spinner("Cloning project..."):
@@ -447,8 +436,7 @@ with tab1:
                 import_data = json.load(uploaded_file)
                 st.json(import_data)
                 
-                if st.button("📥 Import Project", width='stretch'):
-                    # Extract relevant fields
+                if st.button("📥 Import Project"):
                     if isinstance(import_data, dict):
                         if "data" in import_data:
                             import_data = import_data["data"]
@@ -495,8 +483,6 @@ with tab2:
         
         st.markdown("---")
         
-
-
         # Automatically fetch task lists and tasks when a project is selected or tab is accessed
         if selected_project_id and (st.session_state.get("current_project_id") != selected_project_id or not st.session_state.get("current_task_lists") or not st.session_state.get("current_tasks")):
             with st.spinner(f"Fetching task data for project {selected_project_id}..."):
@@ -511,7 +497,7 @@ with tab2:
                     st.success(f"✅ Fetched {len(task_lists)} task lists and {len(tasks)} tasks for project {selected_project_id}.")
         
         # Allow manual refetch
-        if st.button("🔄 Re-fetch Task Lists & Tasks", width='stretch'):
+        if st.button("🔄 Re-fetch Task Lists & Tasks"):
             with st.spinner(f"Re-fetching task data for project {selected_project_id}..."):
                 task_lists, tasks = fetch_project_tasks(selected_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
                 st.session_state["current_task_lists"] = task_lists
@@ -545,7 +531,7 @@ with tab2:
                         if show_raw_json:
                             st.json(tl)
         
-        task_rows = [] # Initialize task_rows here, always defined
+        task_rows = []
         if tasks:
             st.subheader("✅ Tasks")
             for task in tasks:
@@ -561,7 +547,7 @@ with tab2:
         
         if task_rows: 
             task_df = pd.DataFrame(task_rows)
-            st.dataframe(task_df, width='stretch', height=400)
+            st.dataframe(task_df, use_container_width=True, height=400)
 
     # CSV Import Section
     st.markdown("---")
@@ -571,15 +557,12 @@ with tab2:
     
     if uploaded_file is not None:
         try:
-            # Read the CSV file
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ CSV file loaded successfully! Found {len(df)} rows.")
             
-            # Display preview of the data
             with st.expander("📋 Preview CSV Data"):
-                st.dataframe(df.head(10), width='stretch')
+                st.dataframe(df.head(10), use_container_width=True)
             
-            # Show statistics
             tasklist_count = len(df[df['type'] == 'tasklist'])
             task_count = len(df[df['type'] == 'task'])
             
@@ -588,7 +571,6 @@ with tab2:
             col2.metric("Tasks", task_count)
             col3.metric("Total Rows", len(df))
             
-            # Import options
             st.markdown("### Import Options")
             
             col1, col2 = st.columns(2)
@@ -601,12 +583,10 @@ with tab2:
                 if create_project_for_import:
                     new_project_title = st.text_input("New Project Title", value="Imported Tasks Project")
             
-            # Import button
-            if st.button("🚀 Start Import Process", width='stretch'):
+            if st.button("🚀 Start Import Process"):
                 if not (import_tasklists or import_tasks):
                     st.error("Please select at least one import option.")
                 else:
-                    # Create new project if requested
                     target_project_id = selected_project_id
                     if create_project_for_import:
                         with st.spinner("Creating new project..."):
@@ -627,14 +607,13 @@ with tab2:
                         st.error("Please select a project or create a new one.")
                         st.stop()
                     
-                    # Import process
                     import_results = {"tasklists": [], "tasks": [], "errors": []}
                     
                     # Step 1: Import Task Lists
                     if import_tasklists:
                         st.markdown("#### 📑 Importing Task Lists...")
                         tasklist_df = df[df['type'] == 'tasklist'].copy()
-                        tasklist_mapping = {}  # Map original names to created IDs
+                        tasklist_mapping = {}
                         
                         progress_bar = st.progress(0)
                         for idx, row in tasklist_df.iterrows():
@@ -647,10 +626,8 @@ with tab2:
                                     "status": row.get('status', 'incomplete')
                                 }
                                 
-                                # Create task list via API
                                 result = wp_post_json(f"{projects_url}/{target_project_id}/task-lists", tasklist_payload)
-                                st.write(f"DEBUG: API Response for Task List Creation for \'{row[\'title\']}\':")
-                                st.json(result)
+                                
                                 if result and isinstance(result, dict):
                                     tasklist_id = result.get("id")
                                     if tasklist_id:
@@ -660,19 +637,16 @@ with tab2:
                                             "id": tasklist_id,
                                             "status": "success"
                                         })
-                                        st.success(f"✅ Created task list: {row["title"]} (ID: {tasklist_id})")
-                                        st.write(f"DEBUG: tasklist_mapping updated: {tasklist_mapping}")
+                                        st.success(f"✅ Created task list: {row['title']} (ID: {tasklist_id})")
                                     else:
-                                        import_results["errors"].append(f"Failed to retrieve ID for task list: {row["title"]}")
-                                        st.error(f"❌ Failed to retrieve ID for task list: {row["title"]}")
-                                        st.write(f"DEBUG: No ID found in API response for task list \'{row[\'title\']}\'. Full response: {result}")
+                                        import_results["errors"].append(f"Failed to retrieve ID for task list: {row['title']}")
+                                        st.error(f"❌ Failed to retrieve ID for task list: {row['title']}")
                                 else:
-                                    import_results["errors"].append(f"Failed to create task list: {row["title"]}")
-                                    st.error(f"❌ Failed to create task list: {row["title"]}")
-                                    st.write(f"DEBUG: API call for task list \'{row[\'title\']}\' returned no valid result.")
+                                    import_results["errors"].append(f"Failed to create task list: {row['title']}")
+                                    st.error(f"❌ Failed to create task list: {row['title']}")
                                 
                                 progress_bar.progress((idx + 1) / len(tasklist_df))
-                                time.sleep(0.1)  # Rate limiting
+                                time.sleep(0.1)
                                 
                             except Exception as e:
                                 error_msg = f"Error creating task list '{row['title']}': {str(e)}"
@@ -689,31 +663,23 @@ with tab2:
                         progress_bar = st.progress(0)
                         for idx, row in task_df.iterrows():
                             try:
-                                # Find the task list ID
-                                task_list_name = str(row.get('task_list_name', '')).strip() if pd.notna(row.get('task_list_name')) else ''
                                 task_list_id = None
                                 
-                                # First, try to find in the mapping from recently created task list                                st.write(f"DEBUG: Searching for task list \'{task_list_name}\' for task \'{row[\'title\]}\'")
-                                st.write(f"DEBUG: Current tasklist_mapping: {tasklist_mapping}")
-                                if task_list_name and task_list_name in tasklist_mapping:
-                                    task_list_id = tasklist_mapping[task_list_name]
-                                    st.info(f"🔗 Linking task '{row['title']}' to task list '{task_list_name}' (ID: {task_list_id})")
-                                else: # If not found in mapping, try to find existing task list by name
+                                # Priority 1: Check for explicit task_list_id in CSV
+                                if pd.notna(row.get('task_list_id')) and str(row.get('task_list_id')).strip():
+                                    task_list_id = int(row['task_list_id'])
+                                    st.info(f"🔗 Using explicit task_list_id {task_list_id} for task '{row['title']}'")
+                                
+                                # Priority 2: Check task_list_name in recently created mapping
+                                if not task_list_id:
+                                    task_list_name = str(row.get('task_list_name', '')).strip() if pd.notna(row.get('task_list_name')) else ''
+                                    if task_list_name and task_list_name in tasklist_mapping:
+                                        task_list_id = tasklist_mapping[task_list_name]
+                                        st.info(f"🔗 Linking task '{row['title']}' to recently created task list '{task_list_name}' (ID: {task_list_id})")
+                                
+                                # Priority 3: Search existing task lists by name
                                 if not task_list_id and task_list_name:
                                     existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
-                                    for tl in existing_tasklists:
-                                        if str(tl.get(\'title\', \'\')).strip() == task_list_name:
-                                            task_list_id = tl.get(\'id\')
-                                            st.info(f"🔗 Found existing task list \'{task_list_name}\' (ID: {task_list_id}) for task \'{row[\'title\]}\'")
-                                            break
-                                
-                                # If still no task list found, warn                                    task_list_id = tasklist_mapping[task_list_name]
-                                    st.info(f"🔗 Linking task '{row['title']}' to task list '{task_list_name}' (ID: {task_list_id})")
-                                else:
-                                    st.warning(f"DEBUG: Task list \'{task_list_name}\' not found in current session mapping.")
-                                
-                                # If not found in mapping, try to find existing task list by name
-                                if not task_list_id and task_list_name:                                     existing_tasklists = fetch_all_pages(f"{projects_url}/{target_project_id}/task-lists")
                                     for tl in existing_tasklists:
                                         if str(tl.get('title', '')).strip() == task_list_name:
                                             task_list_id = tl.get('id')
@@ -721,7 +687,9 @@ with tab2:
                                             break
                                 
                                 # If still no task list found, warn but continue
-                                if not task_list_id and task_list_na                                    st.warning(f"⚠️ Task list \'{task_list_name}\' not found for task \'{row['title']}\'\. Task will be created without a task list.")                                
+                                if not task_list_id and task_list_name:
+                                    st.warning(f"⚠️ Task list '{task_list_name}' not found for task '{row['title']}'. Task will be created without a task list.")
+                                
                                 task_payload = {
                                     "title": str(row["title"]) if pd.notna(row.get("title")) else "",
                                     "description": str(row.get("description", "")) if pd.notna(row.get("description")) else "",
@@ -734,7 +702,8 @@ with tab2:
                                 
                                 if task_list_id:
                                     task_payload["task_list_id"] = task_list_id
-                                # Handle dates if present, converting NaN or empty strings to None
+                                
+                                # Handle dates if present
                                 start_at_val = row.get('start_at')
                                 if pd.isna(start_at_val) or start_at_val in ['', "{'date': None, 'time': None, 'datetime': None, 'timezone': 'Etc/UTC', 'timestamp': None}"]:
                                     task_payload["start_at"] = None
@@ -746,6 +715,7 @@ with tab2:
                                     task_payload["due_date"] = None
                                 else:
                                     task_payload["due_date"] = due_date_val
+                                
                                 # Create task via API
                                 result = wp_post_json(f"{projects_url}/{target_project_id}/tasks", task_payload)
                                 if result:
@@ -753,7 +723,7 @@ with tab2:
                                     import_results["tasks"].append({
                                         "title": row['title'],
                                         "id": task_id,
-                                        "task_list": task_list_name,
+                                        "task_list": task_list_name if 'task_list_name' in locals() else None,
                                         "status": "success"
                                     })
                                     st.success(f"✅ Created task: {row['title']} (ID: {task_id})")
@@ -762,7 +732,7 @@ with tab2:
                                     st.error(f"❌ Failed to create task: {row['title']}")
                                 
                                 progress_bar.progress((idx + 1) / len(task_df))
-                                time.sleep(0.1)  # Rate limiting
+                                time.sleep(0.1)
                                 
                             except Exception as e:
                                 error_msg = f"Error creating task '{row['title']}': {str(e)}"
@@ -780,19 +750,16 @@ with tab2:
                     col2.metric("Tasks Created", len(import_results["tasks"]))
                     col3.metric("Errors", len(import_results["errors"]))
                     
-                    # Show errors if any
                     if import_results["errors"]:
                         with st.expander("❌ View Errors"):
                             for error in import_results["errors"]:
                                 st.error(error)
                     
-                    # Download import results
                     if import_results["tasklists"] or import_results["tasks"]:
                         download_json(import_results, "import_results.json", label="⬇️ Download Import Results")
                         
                         if target_project_id:
                             st.info(f"💡 Import completed for project ID: {target_project_id}. Re-fetching data...")
-                            # Refresh task lists and tasks after import
                             task_lists, tasks = fetch_project_tasks(target_project_id, projects_url, wp_base, api_ns, fetch_all_pages)
                             st.session_state["current_task_lists"] = task_lists
                             st.session_state["current_tasks"] = tasks
@@ -810,7 +777,7 @@ with tab3:
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🔄 Fetch All Post Types", width='stretch'):
+        if st.button("🔄 Fetch All Post Types"):
             with st.spinner("Fetching post types..."):
                 types = wp_get_json(f"{wp_base}/wp-json/wp/v2/types")
                 if types:
@@ -827,7 +794,7 @@ with tab3:
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            if st.button(f"🔄 Fetch '{type_selected}' Posts", width='stretch'):
+            if st.button(f"🔄 Fetch '{type_selected}' Posts"):
                 with st.spinner(f"Fetching {type_selected} posts..."):
                     posts = fetch_all_pages(f"{posts_url}/{type_selected}")
                     st.session_state["posts_data"] = posts
@@ -847,7 +814,7 @@ with tab3:
                 }
                 for p in posts_data
             ])
-            st.dataframe(df, width='stretch', height=400)
+            st.dataframe(df, use_container_width=True, height=400)
             
             col1, col2 = st.columns(2)
             with col1:
