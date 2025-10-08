@@ -661,6 +661,11 @@ with tab2:
                                                     task_progress = st.progress(0)
                                                     for task_idx, task_row in related_tasks.iterrows():
                                                         try:
+                                                            # Get task list name and normalize it
+                                                            csv_tasklist_name = str(task_row.get('task_list_name', '')).strip() if pd.notna(task_row.get('task_list_name')) else ''
+                                                            
+                                                            st.write(f"🔍 DEBUG: Matching task '{task_row['title']}' - CSV list name: '{csv_tasklist_name}' vs Created list: '{tasklist_title}'")
+                                                            
                                                             task_payload = {
                                                                 "title": str(task_row["title"]) if pd.notna(task_row.get("title")) else "",
                                                                 "description": str(task_row.get("description", "")) if pd.notna(task_row.get("description")) else "",
@@ -703,7 +708,8 @@ with tab2:
                                                                 st.error(f"  ❌ {error_msg}")
                                                             
                                                             # Update task progress
-                                                            task_progress.progress((task_idx + 1) / len(related_tasks))
+                                                            current_task_num = list(related_tasks.index).index(task_idx) + 1
+                                                            task_progress.progress(min(current_task_num / len(related_tasks), 1.0))
                                                             time.sleep(0.1)
                                                             
                                                         except Exception as e:
@@ -724,7 +730,8 @@ with tab2:
                                         st.error(f"❌ {error_msg}")
                             
                             # Update overall progress
-                            overall_progress.progress((tl_idx + 1) / total_tasklists)
+                            current_tl_num = list(tasklist_df.index).index(tl_idx) + 1
+                            overall_progress.progress(min(current_tl_num / total_tasklists, 1.0))
                             st.markdown("---")
                             
                         except Exception as e:
@@ -787,7 +794,7 @@ with tab2:
                                         import_results["errors"].append(error_msg)
                                         st.error(f"❌ {error_msg}")
                                     
-                                    orphan_progress.progress((idx + 1) / len(orphaned_tasks))
+                                    orphan_progress.progress(min((list(orphaned_tasks.index).index(idx) + 1) / len(orphaned_tasks), 1.0))
                                     time.sleep(0.1)
                                     
                                 except Exception as e:
